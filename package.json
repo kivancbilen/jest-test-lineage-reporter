@@ -1,0 +1,65 @@
+{
+  "name": "jest-test-lineage-reporter",
+  "version": "2.0.0",
+  "main": "src/TestCoverageReporter.js",
+  "scripts": {
+    "test": "jest",
+    "test:watch": "jest --watch",
+    "test:coverage": "jest --coverage",
+    "lint": "eslint src/**/*.js",
+    "validate": "npm run lint && npm run test",
+    "prepublishOnly": "npm run validate"
+  },
+  "keywords": [
+    "jest",
+    "testing",
+    "coverage",
+    "reporter",
+    "lineage",
+    "test-coverage",
+    "performance",
+    "memory-analysis",
+    "test-quality",
+    "analytics",
+    "dashboard",
+    "html-report"
+  ],
+  "author": "Jest Test Lineage Reporter Team",
+  "license": "MIT",
+  "description": "Comprehensive test analytics platform with line-by-line coverage, performance metrics, memory analysis, and test quality scoring",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/jest-test-lineage-reporter/jest-test-lineage-reporter.git"
+  },
+  "bugs": {
+    "url": "https://github.com/jest-test-lineage-reporter/jest-test-lineage-reporter/issues"
+  },
+  "homepage": "https://github.com/jest-test-lineage-reporter/jest-test-lineage-reporter#readme",
+  "engines": {
+    "node": ">=14.0.0",
+    "npm": ">=6.0.0"
+  },
+  "files": [
+    "src/TestCoverageReporter.js",
+    "src/testSetup.js",
+    "src/babel-plugin-lineage-tracker.js",
+    "src/config.js",
+    "babel.config.js",
+    "README.md",
+    "LICENSE"
+  ],
+  "devDependencies": {
+    "@babel/core": "^7.23.0",
+    "@babel/preset-env": "^7.23.0",
+    "@babel/preset-typescript": "^7.23.0",
+    "@babel/types": "^7.23.0",
+    "@types/babel__core": "^7.20.0",
+    "@types/istanbul-lib-coverage": "^2.0.6",
+    "@types/jest": "^30.0.0",
+    "babel-jest": "^29.7.0",
+    "jest": "^30.0.5",
+    "ts-jest": "^29.4.0",
+    "ts-node": "^10.9.2",
+    "typescript": "^5.8.3"
+  }
+}
