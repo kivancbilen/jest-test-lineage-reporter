@@ -29,12 +29,12 @@
   "description": "Comprehensive test analytics platform with line-by-line coverage, performance metrics, memory analysis, and test quality scoring",
   "repository": {
     "type": "git",
-    "url": "https://github.com/jest-test-lineage-reporter/jest-test-lineage-reporter.git"
+    "url": "https://github.com/kivancbilen/jest-test-lineage-reporter.git"
   },
   "bugs": {
-    "url": "https://github.com/jest-test-lineage-reporter/jest-test-lineage-reporter/issues"
+    "url": "https://github.com/kivancbilen/jest-test-lineage-reporter/issues"
   },
-  "homepage": "https://github.com/jest-test-lineage-reporter/jest-test-lineage-reporter#readme",
+  "homepage": "https://github.com/kivancbilen/jest-test-lineage-reporter#readme",
   "engines": {
     "node": ">=14.0.0",
     "npm": ">=6.0.0"
