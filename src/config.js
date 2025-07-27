@@ -3,6 +3,12 @@
  */
 
 const DEFAULT_CONFIG = {
+  // Feature toggles
+  enabled: true, // Master switch to enable/disable entire system
+  enableLineageTracking: true, // Enable detailed line-by-line tracking
+  enablePerformanceTracking: true, // Enable CPU/memory monitoring
+  enableQualityAnalysis: true, // Enable test quality scoring
+
   // Output settings
   outputFile: 'test-lineage-report.html',
   enableConsoleOutput: true,
@@ -107,13 +113,22 @@ function validateAndMergeConfig(userConfig = {}) {
  */
 function getConfigFromEnv() {
   return {
+    // Feature toggles
+    enabled: process.env.JEST_LINEAGE_ENABLED !== 'false', // Default enabled, set to 'false' to disable
+    enableLineageTracking: process.env.JEST_LINEAGE_TRACKING !== 'false',
+    enablePerformanceTracking: process.env.JEST_LINEAGE_PERFORMANCE !== 'false',
+    enableQualityAnalysis: process.env.JEST_LINEAGE_QUALITY !== 'false',
+
+    // Output settings
     outputFile: process.env.JEST_LINEAGE_OUTPUT_FILE,
     enableDebugLogging: process.env.JEST_LINEAGE_DEBUG === 'true',
-    memoryLeakThreshold: process.env.JEST_LINEAGE_MEMORY_THRESHOLD ? 
+
+    // Thresholds
+    memoryLeakThreshold: process.env.JEST_LINEAGE_MEMORY_THRESHOLD ?
       parseInt(process.env.JEST_LINEAGE_MEMORY_THRESHOLD) : undefined,
-    gcPressureThreshold: process.env.JEST_LINEAGE_GC_THRESHOLD ? 
+    gcPressureThreshold: process.env.JEST_LINEAGE_GC_THRESHOLD ?
       parseInt(process.env.JEST_LINEAGE_GC_THRESHOLD) : undefined,
-    qualityThreshold: process.env.JEST_LINEAGE_QUALITY_THRESHOLD ? 
+    qualityThreshold: process.env.JEST_LINEAGE_QUALITY_THRESHOLD ?
       parseInt(process.env.JEST_LINEAGE_QUALITY_THRESHOLD) : undefined
   };
 }

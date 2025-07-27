@@ -151,11 +151,25 @@ function analyzeTestQuality(testFunction, testName) {
   return qualityMetrics;
 }
 
+// Check if lineage tracking is enabled
+const isEnabled = process.env.JEST_LINEAGE_ENABLED !== 'false';
+const isTrackingEnabled = process.env.JEST_LINEAGE_TRACKING !== 'false';
+const isPerformanceEnabled = process.env.JEST_LINEAGE_PERFORMANCE !== 'false';
+const isQualityEnabled = process.env.JEST_LINEAGE_QUALITY !== 'false';
+
 // Global tracker for test coverage
 global.__TEST_LINEAGE_TRACKER__ = {
   currentTest: null,
   testCoverage: new Map(),
-  isTracking: false
+  isTracking: isEnabled && isTrackingEnabled,
+  isPerformanceTracking: isEnabled && isPerformanceEnabled,
+  isQualityTracking: isEnabled && isQualityEnabled,
+  config: {
+    enabled: isEnabled,
+    lineageTracking: isTrackingEnabled,
+    performanceTracking: isPerformanceEnabled,
+    qualityTracking: isQualityEnabled
+  }
 };
 
 // Store original test functions

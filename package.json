@@ -6,6 +6,10 @@
     "test": "jest",
     "test:watch": "jest --watch",
     "test:coverage": "jest --coverage",
+    "test:lineage": "JEST_LINEAGE_ENABLED=true jest",
+    "test:fast": "JEST_LINEAGE_ENABLED=false jest",
+    "test:performance": "JEST_LINEAGE_PERFORMANCE=true JEST_LINEAGE_QUALITY=false jest",
+    "test:quality": "JEST_LINEAGE_QUALITY=true JEST_LINEAGE_PERFORMANCE=false jest",
     "validate": "npm run test"
   },
   "keywords": [

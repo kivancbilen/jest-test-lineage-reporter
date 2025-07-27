@@ -2,7 +2,12 @@
  * Production Babel Plugin for Jest Test Lineage Tracking
  * Automatically instruments source code to track line-by-line test coverage
  */
-function lineageTrackerPlugin({ types: t }) {
+function lineageTrackerPlugin({ types: t }, options = {}) {
+  // Check if lineage tracking is enabled
+  const isEnabled = process.env.JEST_LINEAGE_ENABLED !== 'false' &&
+                   process.env.JEST_LINEAGE_TRACKING !== 'false' &&
+                   options.enabled !== false;
+
   return {
     name: 'lineage-tracker',
     visitor: {
@@ -10,11 +15,13 @@ function lineageTrackerPlugin({ types: t }) {
         enter(path, state) {
           // Initialize plugin state
           state.filename = state.file.opts.filename;
-          state.shouldInstrument = shouldInstrumentFile(state.filename);
+          state.shouldInstrument = isEnabled && shouldInstrumentFile(state.filename);
           state.instrumentedLines = new Set();
 
           if (state.shouldInstrument) {
             console.log(`🔧 Instrumenting: ${state.filename}`);
+          } else if (!isEnabled) {
+            console.log(`⏸️ Lineage tracking disabled for: ${state.filename}`);
           }
         }
       },

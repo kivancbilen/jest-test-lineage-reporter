@@ -156,6 +156,123 @@ The reporter generates:
 3. **📈 Performance Insights**: Memory leaks, GC pressure, slow tests
 4. **🧪 Quality Metrics**: Test quality scores and improvement recommendations
 
+## 🔧 How It Works
+
+Jest Test Lineage Reporter uses a sophisticated multi-layered approach to provide precise test analytics:
+
+### **1. 🔄 Babel Plugin Transformation**
+
+The **Babel plugin** (`babel-plugin-lineage-tracker.js`) is the core of the system:
+
+```javascript
+// Your original code:
+function add(a, b) {
+  return a + b;
+}
+
+// Gets transformed to:
+function add(a, b) {
+  global.__TEST_LINEAGE_TRACKER__.trackExecution('src/calculator.js', 2, 1);
+  return a + b;
+}
+```
+
+**What the plugin does:**
+- 🎯 **Injects tracking calls** into every line of your source code
+- 📍 **Records exact line numbers** and file paths
+- 🔢 **Tracks call depth** (how deep in the function call stack)
+- ⚡ **Minimal overhead** - only active during testing
+
+### **2. 🧪 Test Setup Integration**
+
+The **test setup file** (`testSetup.js`) provides:
+
+```javascript
+// Tracks which test is currently running
+global.__TEST_LINEAGE_TRACKER__ = {
+  currentTest: null,
+  testCoverage: new Map(),
+  isTracking: false
+};
+```
+
+**Key features:**
+- 🎯 **Per-test isolation** - knows exactly which test is executing
+- 📊 **Performance monitoring** - CPU cycles, memory usage, GC pressure
+- 🧪 **Test quality analysis** - assertion counting, test smell detection
+- 🔍 **Call depth tracking** - maps function call chains
+
+### **3. 📈 Jest Reporter Integration**
+
+The **main reporter** (`TestCoverageReporter.js`) processes all collected data:
+
+**Data Collection:**
+- ✅ Aggregates tracking data from all tests
+- ✅ Correlates line executions with specific tests
+- ✅ Calculates performance metrics and quality scores
+- ✅ Generates comprehensive analytics
+
+**Output Generation:**
+- 📋 **Console reports** with real-time alerts
+- 🌐 **Interactive HTML dashboard** with 4 different views
+- 📊 **Sortable data tables** with 11+ sorting options
+- 🚨 **Visual alerts** for performance issues
+
+### **4. 🎯 Precision Tracking System**
+
+**Line-by-Line Accuracy:**
+```javascript
+// Each line gets unique tracking:
+Line 1: trackExecution('file.js', 1, depth)  // Function declaration
+Line 2: trackExecution('file.js', 2, depth)  // Variable assignment
+Line 3: trackExecution('file.js', 3, depth)  // Return statement
+```
+
+**Call Depth Analysis:**
+```javascript
+function outer() {        // Depth 1 (D1)
+  return inner();         // Depth 1 → calls inner
+}
+
+function inner() {        // Depth 2 (D2)
+  return deepFunction();  // Depth 2 → calls deep
+}
+
+function deepFunction() { // Depth 3 (D3)
+  return 42;             // Depth 3
+}
+```
+
+### **5. 🔥 Performance Monitoring**
+
+**Real-time Performance Tracking:**
+- **🚨 Memory Leaks**: Detects allocations >50KB per test
+- **🗑️ GC Pressure**: Monitors garbage collection frequency
+- **🐌 Slow Tests**: Identifies performance outliers
+- **⚡ CPU Cycles**: Hardware-level performance measurement
+
+**Quality Analysis:**
+- **📊 Assertion Counting**: Tracks test thoroughness
+- **🧪 Test Smell Detection**: Identifies problematic patterns
+- **🔍 Error Handling**: Measures test robustness
+- **📈 Maintainability Scoring**: 0-100% quality metrics
+
+### **6. 🎨 Data Visualization**
+
+**Interactive HTML Dashboard:**
+- **📁 Files View**: Expandable source code with coverage highlights
+- **📊 Lines Analysis**: Sortable table with all metrics
+- **🔥 Performance Analytics**: CPU, memory, and performance hotspots
+- **🧪 Test Quality**: Quality scores, test smells, and recommendations
+
+**Real-time Alerts:**
+```bash
+Line 21: "heavyFunction" (performance-example.ts, 80,000 executions,
+depths 1,4, 571 cycles, 0.2μs, +5.4MB 🚨LEAK 🐌SLOW) ✅ PRECISE
+```
+
+This multi-layered approach provides **unprecedented visibility** into your test suite's behavior, performance, and quality!
+
 ## Example Output
 
 ### Console Output
@@ -263,16 +380,133 @@ module.exports = {
 You can also configure via environment variables:
 
 ```bash
-# Output file
-export JEST_LINEAGE_OUTPUT_FILE=custom-report.html
+# 🎛️ FEATURE TOGGLES (Master Controls)
+export JEST_LINEAGE_ENABLED=true           # Master switch (default: true)
+export JEST_LINEAGE_TRACKING=true          # Line-by-line tracking (default: true)
+export JEST_LINEAGE_PERFORMANCE=true       # Performance monitoring (default: true)
+export JEST_LINEAGE_QUALITY=true           # Quality analysis (default: true)
 
-# Enable debug logging
+# 📁 OUTPUT SETTINGS
+export JEST_LINEAGE_OUTPUT_FILE=custom-report.html
 export JEST_LINEAGE_DEBUG=true
 
-# Performance thresholds
+# 🎯 PERFORMANCE THRESHOLDS
 export JEST_LINEAGE_MEMORY_THRESHOLD=100000  # 100KB
 export JEST_LINEAGE_GC_THRESHOLD=10
 export JEST_LINEAGE_QUALITY_THRESHOLD=70
+```
+
+## 🎛️ **Enable/Disable Controls**
+
+### **Quick Disable/Enable**
+
+```bash
+# 🚫 COMPLETELY DISABLE (fastest - no instrumentation)
+export JEST_LINEAGE_ENABLED=false
+npm test
+
+# ✅ RE-ENABLE
+export JEST_LINEAGE_ENABLED=true
+npm test
+
+# 🎯 SELECTIVE DISABLE (keep basic tracking, disable heavy features)
+export JEST_LINEAGE_PERFORMANCE=false  # Disable CPU/memory monitoring
+export JEST_LINEAGE_QUALITY=false      # Disable test quality analysis
+npm test
+```
+
+### **Configuration-Based Control**
+
+```javascript
+// jest.config.js - Conditional setup
+const enableLineage = process.env.NODE_ENV !== 'production';
+
+module.exports = {
+  reporters: [
+    'default',
+    ...(enableLineage ? ['jest-test-lineage-reporter'] : [])
+  ],
+  setupFilesAfterEnv: [
+    ...(enableLineage ? ['jest-test-lineage-reporter/src/testSetup.js'] : [])
+  ]
+};
+```
+
+### **Babel Plugin Control**
+
+```javascript
+// babel.config.js - Conditional instrumentation
+const enableLineage = process.env.JEST_LINEAGE_ENABLED !== 'false';
+
+module.exports = {
+  presets: [
+    ['@babel/preset-env', { targets: { node: 'current' } }]
+  ],
+  plugins: [
+    // Only add plugin when enabled
+    ...(enableLineage ? [
+      ['jest-test-lineage-reporter/src/babel-plugin-lineage-tracker.js', {
+        enabled: true
+      }]
+    ] : [])
+  ]
+};
+```
+
+### **Use Cases for Disabling**
+
+#### **🚀 CI/CD Pipelines**
+```bash
+# Fast CI runs - disable detailed tracking
+export JEST_LINEAGE_ENABLED=false
+npm test
+
+# Detailed analysis runs - enable everything
+export JEST_LINEAGE_ENABLED=true
+npm test
+```
+
+#### **🔧 Development Workflow**
+```bash
+# Quick development testing
+export JEST_LINEAGE_PERFORMANCE=false
+npm test
+
+# Deep analysis when needed
+export JEST_LINEAGE_PERFORMANCE=true
+npm test
+```
+
+#### **📊 Performance Testing**
+```bash
+# Measure test performance without instrumentation overhead
+export JEST_LINEAGE_ENABLED=false
+npm test
+
+# Analyze test quality and performance
+export JEST_LINEAGE_ENABLED=true
+npm test
+```
+
+### **📦 NPM Scripts (For Package Development)**
+
+If you're working on the jest-test-lineage-reporter package itself, you can use these scripts:
+
+```bash
+# 🚀 Fast testing (no instrumentation)
+npm run test:fast
+
+# 📊 Full lineage analysis
+npm run test:lineage
+
+# 🔥 Performance focus (no quality analysis)
+npm run test:performance
+
+# 🧪 Quality focus (no performance monitoring)
+npm run test:quality
+
+# 👀 Watch mode with lineage
+npm run test:watch
 ```
 
 ## How It Works
