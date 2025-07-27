@@ -13,17 +13,35 @@ A comprehensive test analytics platform that provides line-by-line test coverage
 
 ## 📦 Installation
 
+### **Option 1: Install from NPM (Recommended)**
+
 ```bash
 npm install jest-test-lineage-reporter --save-dev
 ```
+
+### **Option 2: Install from GitHub**
+
+```bash
+# Install latest from GitHub
+npm install kivancbilen/jest-test-lineage-reporter --save-dev
+
+# Install specific version/tag
+npm install kivancbilen/jest-test-lineage-reporter#v2.0.0 --save-dev
+
+# Install from specific branch
+npm install kivancbilen/jest-test-lineage-reporter#main --save-dev
+```
+
+**Note**: Configuration paths differ slightly between NPM and GitHub installations (see setup instructions below).
 
 ## ⚙️ Quick Start
 
 ### 1. **Basic Setup**
 
-Add to your `jest.config.js`:
+#### **For NPM Installation:**
 
 ```javascript
+// jest.config.js
 module.exports = {
   // Enable coverage collection
   collectCoverage: true,
@@ -44,11 +62,36 @@ module.exports = {
 };
 ```
 
-### 2. **Babel Configuration**
-
-Create or update `babel.config.js`:
+#### **For GitHub Installation:**
 
 ```javascript
+// jest.config.js
+module.exports = {
+  // Enable coverage collection
+  collectCoverage: true,
+
+  // Add the reporter (use relative path for GitHub install)
+  reporters: [
+    'default',
+    './node_modules/jest-test-lineage-reporter/src/TestCoverageReporter.js'
+  ],
+
+  // Enable precise test tracking
+  setupFilesAfterEnv: ['./node_modules/jest-test-lineage-reporter/src/testSetup.js'],
+
+  // Configure Babel transformation (if using TypeScript/modern JS)
+  transform: {
+    '^.+\\.(ts|tsx|js|jsx)$': 'babel-jest',
+  }
+};
+```
+
+### 2. **Babel Configuration**
+
+#### **For NPM Installation:**
+
+```javascript
+// babel.config.js
 module.exports = {
   presets: [
     ['@babel/preset-env', { targets: { node: 'current' } }],
@@ -56,6 +99,22 @@ module.exports = {
   ],
   plugins: [
     // Add the lineage tracking plugin
+    'jest-test-lineage-reporter/src/babel-plugin-lineage-tracker.js'
+  ]
+};
+```
+
+#### **For GitHub Installation:**
+
+```javascript
+// babel.config.js
+module.exports = {
+  presets: [
+    ['@babel/preset-env', { targets: { node: 'current' } }],
+    '@babel/preset-typescript' // If using TypeScript
+  ],
+  plugins: [
+    // Add the lineage tracking plugin (use full path for GitHub install)
     './node_modules/jest-test-lineage-reporter/src/babel-plugin-lineage-tracker.js'
   ]
 };
@@ -259,10 +318,31 @@ jest-test-lineage-reporter/
 ```bash
 Error: Cannot find module 'jest-test-lineage-reporter/src/testSetup.js'
 ```
-**Solution**: Make sure you've installed the package and the path is correct:
-```javascript
-setupFilesAfterEnv: ['jest-test-lineage-reporter/src/testSetup.js']
-```
+**Solutions**:
+1. **Make sure the package is installed**:
+   ```bash
+   npm install jest-test-lineage-reporter --save-dev
+   ```
+
+2. **Use the correct path in jest.config.js**:
+   ```javascript
+   // ✅ Correct - short path (recommended)
+   setupFilesAfterEnv: ['jest-test-lineage-reporter/src/testSetup.js']
+
+   // ✅ Also correct - explicit path
+   setupFilesAfterEnv: ['./node_modules/jest-test-lineage-reporter/src/testSetup.js']
+   ```
+
+3. **For Babel plugin in babel.config.js**:
+   ```javascript
+   plugins: [
+     // ✅ Recommended - short path
+     'jest-test-lineage-reporter/src/babel-plugin-lineage-tracker.js'
+
+     // ✅ Also works - explicit path
+     // './node_modules/jest-test-lineage-reporter/src/babel-plugin-lineage-tracker.js'
+   ]
+   ```
 
 #### **No HTML Report Generated**
 **Possible causes**:
