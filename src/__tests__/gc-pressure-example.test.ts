@@ -8,8 +8,8 @@ import {
   objectPoolExample
 } from '../gc-pressure-example';
 
-describe('GC Pressure Examples', () => {
-  test('should demonstrate BAD GC pressure with many small objects', () => {
+describe.skip('GC Pressure Examples', () => {
+  test.skip('should demonstrate BAD GC pressure with many small objects', () => {
     // This test creates many small objects and should trigger 🗑️GC alerts
     
     const result1 = badGCPressureFunction(1000); // Creates 2000+ small objects

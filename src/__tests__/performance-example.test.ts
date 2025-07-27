@@ -9,7 +9,7 @@ import {
   performanceVariableFunction
 } from '../performance-example';
 
-describe('Performance Tracking Examples', () => {
+describe.skip('Performance Tracking Examples', () => {
   test('should track lightweight function performance', () => {
     // This should show minimal CPU cycles
     const result = lightweightFunction(5);

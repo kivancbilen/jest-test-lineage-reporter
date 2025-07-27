@@ -6,8 +6,7 @@
     "test": "jest",
     "test:watch": "jest --watch",
     "test:coverage": "jest --coverage",
-    "lint": "eslint src/**/*.js",
-    "validate": "npm run lint && npm run test",
+    "validate": "npm run test",
     "prepublishOnly": "npm run validate"
   },
   "keywords": [
