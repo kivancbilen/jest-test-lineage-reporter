@@ -1,5 +1,7 @@
 const fs = require('fs');
 const path = require('path');
+const { loadConfig } = require('./config');
+const MutationTester = require('./MutationTester');
 
 class TestCoverageReporter {
   constructor(globalConfig, options) {
@@ -191,7 +193,59 @@ class TestCoverageReporter {
     this.tryGetPreciseTrackingData();
 
     this.generateReport();
-    this.generateHtmlReport();
+    await this.generateHtmlReport();
+
+    // Run mutation testing if enabled
+    await this.runMutationTestingIfEnabled();
+  }
+
+  /**
+   * Run mutation testing if enabled in configuration
+   */
+  async runMutationTestingIfEnabled() {
+    const config = loadConfig(this.options);
+
+    if (config.enableMutationTesting) {
+      console.log('\n🧬 Mutation testing enabled, starting mutation analysis...');
+
+      let mutationTester = null;
+      try {
+        mutationTester = new MutationTester(config);
+
+        // Load lineage data from the current test run
+        const loaded = await mutationTester.loadLineageData();
+        if (!loaded) {
+          console.log('⚠️ No lineage data available for mutation testing');
+          return;
+        }
+
+        // Run mutation testing
+        const results = await mutationTester.runMutationTesting();
+
+        // Store results for HTML report integration
+        this.mutationResults = results;
+
+        // Regenerate HTML report with mutation data
+        await this.generateHtmlReport();
+
+      } catch (error) {
+        console.error('❌ Mutation testing failed:', error.message);
+        if (this.options.enableDebugLogging) {
+          console.error(error.stack);
+        }
+      } finally {
+        // Always cleanup, even if there was an error
+        if (mutationTester) {
+          try {
+            await mutationTester.cleanup();
+          } catch (cleanupError) {
+            console.error('❌ Error during mutation testing cleanup:', cleanupError.message);
+            // Try emergency cleanup as last resort
+            mutationTester.emergencyCleanup();
+          }
+        }
+      }
+    }
   }
 
   tryGetPreciseTrackingData() {
@@ -249,6 +303,8 @@ class TestCoverageReporter {
     }
 
     console.log(`🔍 Processing ${testDataArray.length} test data entries`);
+
+
 
     testDataArray.forEach((testData, index) => {
       try {
@@ -1030,7 +1086,8 @@ class TestCoverageReporter {
             font-weight: bold;
         }
         .performance-analysis,
-        .quality-analysis {
+        .quality-analysis,
+        .mutations-analysis {
             background: white;
             padding: 30px;
             border-radius: 10px;
@@ -1252,6 +1309,360 @@ class TestCoverageReporter {
             margin-top: 40px;
             padding: 20px;
         }
+
+        /* Mutation Testing Styles */
+        .mutation-results {
+            background: #f8f9fa;
+            border: 1px solid #dee2e6;
+            border-radius: 8px;
+            margin: 15px 0;
+            padding: 15px;
+        }
+        .mutation-results h4 {
+            margin: 0 0 15px 0;
+            color: #495057;
+            font-size: 16px;
+        }
+        .mutation-summary {
+            display: flex;
+            align-items: center;
+            gap: 15px;
+            margin-bottom: 15px;
+            flex-wrap: wrap;
+        }
+        .mutation-score {
+            font-weight: bold;
+            padding: 8px 12px;
+            border-radius: 6px;
+            font-size: 14px;
+        }
+        .mutation-score-good {
+            background: #d4edda;
+            color: #155724;
+            border: 1px solid #c3e6cb;
+        }
+        .mutation-score-fair {
+            background: #fff3cd;
+            color: #856404;
+            border: 1px solid #ffeaa7;
+        }
+        .mutation-score-poor {
+            background: #f8d7da;
+            color: #721c24;
+            border: 1px solid #f5c6cb;
+        }
+        .mutation-stats {
+            display: flex;
+            gap: 10px;
+            flex-wrap: wrap;
+        }
+        .mutation-stat {
+            padding: 4px 8px;
+            border-radius: 4px;
+            font-size: 12px;
+            font-weight: 500;
+        }
+        .mutation-stat.killed {
+            background: #d4edda;
+            color: #155724;
+        }
+        .mutation-stat.survived {
+            background: #f8d7da;
+            color: #721c24;
+        }
+        .mutation-stat.error {
+            background: #f8d7da;
+            color: #721c24;
+        }
+        .mutation-stat.timeout {
+            background: #fff3cd;
+            color: #856404;
+        }
+        .mutation-details {
+            margin-top: 15px;
+        }
+        .mutation-group {
+            margin-bottom: 15px;
+        }
+        .mutation-group h5 {
+            margin: 0 0 10px 0;
+            font-size: 14px;
+            color: #495057;
+        }
+        .mutation-group summary {
+            cursor: pointer;
+            font-weight: 500;
+            color: #495057;
+            margin-bottom: 10px;
+        }
+        .mutation-item {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            padding: 8px 12px;
+            margin: 5px 0;
+            border-radius: 4px;
+            font-size: 13px;
+            flex-wrap: wrap;
+        }
+        .mutation-item.survived {
+            background: #f8d7da;
+            border-left: 4px solid #dc3545;
+        }
+        .mutation-item.killed {
+            background: #d4edda;
+            border-left: 4px solid #28a745;
+        }
+        .mutation-item.error {
+            background: #f8d7da;
+            border-left: 4px solid #dc3545;
+        }
+        .mutation-type {
+            background: #6c757d;
+            color: white;
+            padding: 2px 6px;
+            border-radius: 3px;
+            font-size: 11px;
+            font-weight: 500;
+            text-transform: uppercase;
+            min-width: 80px;
+            text-align: center;
+        }
+        .mutation-description {
+            flex: 1;
+            color: #495057;
+        }
+        .mutation-tests {
+            color: #6c757d;
+            font-size: 12px;
+        }
+        .mutation-error {
+            color: #721c24;
+            font-style: italic;
+            flex: 1;
+        }
+
+        /* Mutation Dashboard Styles */
+        .mutations-overview {
+            margin-bottom: 30px;
+        }
+        .mutations-summary-cards {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 20px;
+            margin-bottom: 30px;
+        }
+        .summary-card {
+            background: white;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+            text-align: center;
+            border: 2px solid #e9ecef;
+        }
+        .summary-card.excellent {
+            border-color: #28a745;
+            background: #f8fff9;
+        }
+        .summary-card.good {
+            border-color: #6f42c1;
+            background: #f8f7ff;
+        }
+        .summary-card.fair {
+            border-color: #ffc107;
+            background: #fffef8;
+        }
+        .summary-card.poor {
+            border-color: #dc3545;
+            background: #fff8f8;
+        }
+        .summary-card.survived {
+            border-color: #dc3545;
+            background: #fff8f8;
+        }
+        .summary-card.killed {
+            border-color: #28a745;
+            background: #f8fff9;
+        }
+        .summary-card h3 {
+            margin: 0 0 10px 0;
+            font-size: 14px;
+            color: #6c757d;
+            font-weight: 600;
+        }
+        .big-number {
+            font-size: 2.5em;
+            font-weight: bold;
+            color: #495057;
+            margin: 10px 0;
+        }
+        .subtitle {
+            font-size: 12px;
+            color: #6c757d;
+        }
+        .mutations-chart {
+            margin: 30px 0;
+        }
+        .mutation-bars {
+            margin: 15px 0;
+        }
+        .mutation-bar {
+            margin: 10px 0;
+        }
+        .mutation-bar span {
+            display: block;
+            margin-bottom: 5px;
+            font-size: 14px;
+            font-weight: 500;
+        }
+        .mutation-killed {
+            color: #28a745;
+        }
+        .mutation-survived {
+            color: #dc3545;
+        }
+        .mutation-timeout {
+            color: #ffc107;
+        }
+        .mutation-error {
+            color: #dc3545;
+        }
+        .fill.killed {
+            background: #28a745;
+        }
+        .fill.survived {
+            background: #dc3545;
+        }
+        .fill.timeout {
+            background: #ffc107;
+        }
+        .fill.error {
+            background: #dc3545;
+        }
+        .mutations-files {
+            margin-top: 30px;
+        }
+        .mutations-table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 15px;
+        }
+        .mutations-table th,
+        .mutations-table td {
+            padding: 12px;
+            text-align: left;
+            border-bottom: 1px solid #e9ecef;
+        }
+        .mutations-table th {
+            background: #f8f9fa;
+            font-weight: 600;
+            position: sticky;
+            top: 0;
+        }
+        .mutations-table tr:hover {
+            background: #f8f9fa;
+        }
+        .mutations-table .killed {
+            color: #28a745;
+            font-weight: bold;
+        }
+        .mutations-table .survived {
+            color: #dc3545;
+            font-weight: bold;
+        }
+        .no-data {
+            text-align: center;
+            padding: 40px;
+            color: #6c757d;
+        }
+        .no-data h3 {
+            margin-bottom: 10px;
+            color: #495057;
+        }
+        .file-row {
+            cursor: pointer;
+        }
+        .file-row:hover {
+            background: #f8f9fa;
+        }
+        .file-details {
+            background: #f8f9fa;
+        }
+        .file-mutation-details {
+            padding: 15px;
+        }
+        .mutations-by-line {
+            margin: 10px 0;
+        }
+        .line-mutations {
+            margin-bottom: 20px;
+            border: 1px solid #e9ecef;
+            border-radius: 6px;
+            padding: 15px;
+            background: white;
+        }
+        .line-mutations h5 {
+            margin: 0 0 10px 0;
+            color: #495057;
+            font-size: 14px;
+            font-weight: 600;
+        }
+        .mutations-list {
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+        }
+        .mutation-detail {
+            padding: 10px;
+            border-radius: 4px;
+            border-left: 4px solid #6c757d;
+        }
+        .mutation-detail.killed {
+            background: #d4edda;
+            border-left-color: #28a745;
+        }
+        .mutation-detail.survived {
+            background: #f8d7da;
+            border-left-color: #dc3545;
+        }
+        .mutation-detail.error {
+            background: #fff3cd;
+            border-left-color: #ffc107;
+        }
+        .mutation-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 8px;
+        }
+        .mutation-status {
+            font-weight: bold;
+            font-size: 12px;
+        }
+        .mutation-type {
+            background: #6c757d;
+            color: white;
+            padding: 2px 6px;
+            border-radius: 3px;
+            font-size: 11px;
+            font-weight: 500;
+            text-transform: uppercase;
+        }
+        .mutation-change {
+            margin: 8px 0;
+            font-size: 13px;
+        }
+        .mutation-change code {
+            background: #f8f9fa;
+            padding: 2px 4px;
+            border-radius: 3px;
+            font-family: 'Courier New', monospace;
+        }
+        .mutation-tests {
+            font-size: 12px;
+            color: #6c757d;
+            font-style: italic;
+        }
     </style>
     <script>
         function toggleCoverage(lineNumber, filePath) {
@@ -1276,6 +1687,7 @@ class TestCoverageReporter {
             <button id="view-lines" class="nav-btn" onclick="showView('lines')">📊 Lines Analysis</button>
             <button id="view-performance" class="nav-btn" onclick="showView('performance')">🔥 Performance Analytics</button>
             <button id="view-quality" class="nav-btn" onclick="showView('quality')">🧪 Test Quality</button>
+            <button id="view-mutations" class="nav-btn" onclick="showView('mutations')">🧬 Mutation Testing</button>
             <button id="expand-all" class="action-btn" onclick="expandAll()">📖 Expand All</button>
             <button id="collapse-all" class="action-btn" onclick="collapseAll()">📕 Collapse All</button>
         </div>
@@ -1471,9 +1883,17 @@ class TestCoverageReporter {
             const uniqueTests = this.deduplicateTests(testInfos);
             const testsByFile = this.groupTestInfosByFile(uniqueTests);
 
+            // Get mutation results for this line
+            const mutationResults = this.getMutationResultsForLine(actualFilePath, lineNumber);
+
             html += `
             <div id="details-${fileId}-${lineNumber}" class="coverage-details">
                 <strong>Line ${lineNumber} is covered by ${uniqueTests.length} test${uniqueTests.length !== 1 ? 's' : ''}:</strong>`;
+
+            // Add mutation testing results if available
+            if (mutationResults && mutationResults.length > 0) {
+              html += this.generateMutationResultsHtml(mutationResults, lineNumber);
+            }
 
             for (const [testFile, tests] of Object.entries(testsByFile)) {
               if (tests && Array.isArray(tests)) {
@@ -1993,6 +2413,13 @@ class TestCoverageReporter {
             </div>
         </div>
 
+        <div id="mutations-view" style="display: none;">
+            <div class="mutations-analysis">
+                <h2>🧬 Mutation Testing Results</h2>
+                <div id="mutations-dashboard"></div>
+            </div>
+        </div>
+
         <div class="stats">
             <h3>📊 Overall Statistics</h3>
             <div class="stat-item">
@@ -2026,6 +2453,7 @@ class TestCoverageReporter {
                 document.getElementById('lines-view').style.display = viewName === 'lines' ? 'block' : 'none';
                 document.getElementById('performance-view').style.display = viewName === 'performance' ? 'block' : 'none';
                 document.getElementById('quality-view').style.display = viewName === 'quality' ? 'block' : 'none';
+                document.getElementById('mutations-view').style.display = viewName === 'mutations' ? 'block' : 'none';
                 document.getElementById('sort-controls').style.display = viewName === 'lines' ? 'flex' : 'none';
 
                 if (viewName === 'lines') {
@@ -2034,6 +2462,8 @@ class TestCoverageReporter {
                     generatePerformanceDashboard();
                 } else if (viewName === 'quality') {
                     generateQualityDashboard();
+                } else if (viewName === 'mutations') {
+                    generateMutationsDashboard();
                 }
             }
 
@@ -2468,9 +2898,327 @@ class TestCoverageReporter {
 
                 document.getElementById('quality-dashboard').innerHTML = html;
             }
+
+            function generateMutationsDashboard() {
+                let mutationData = ${JSON.stringify(this.mutationResults || {})};
+
+
+
+                if (!mutationData || mutationData.totalMutations === undefined) {
+                    document.getElementById('mutations-dashboard').innerHTML = \`
+                        <div class="no-data">
+                            <h3>🧬 No Mutation Testing Data Available</h3>
+                            <p>Run mutation testing to see results here.</p>
+                        </div>
+                    \`;
+                    return;
+                }
+
+                // Use the actual structure returned by MutationTester
+                const summary = {
+                    total: mutationData.totalMutations || 0,
+                    killed: mutationData.killedMutations || 0,
+                    survived: mutationData.survivedMutations || 0,
+                    timeout: mutationData.timeoutMutations || 0,
+                    error: mutationData.errorMutations || 0
+                };
+                const mutationScore = mutationData.mutationScore || 0;
+                const scoreClass = mutationScore >= 80 ? 'excellent' : mutationScore >= 60 ? 'good' : mutationScore >= 40 ? 'fair' : 'poor';
+
+                let html = \`
+                    <div class="mutations-overview">
+                        <div class="mutations-summary-cards">
+                            <div class="summary-card \${scoreClass}">
+                                <h3>🎯 Mutation Score</h3>
+                                <div class="big-number">\${mutationScore}%</div>
+                                <div class="subtitle">\${summary.killed}/\${summary.total} mutations killed</div>
+                            </div>
+                            <div class="summary-card">
+                                <h3>🔬 Total Mutations</h3>
+                                <div class="big-number">\${summary.total}</div>
+                                <div class="subtitle">Generated across all files</div>
+                            </div>
+                            <div class="summary-card survived">
+                                <h3>🔴 Survived</h3>
+                                <div class="big-number">\${summary.survived}</div>
+                                <div class="subtitle">Mutations not caught by tests</div>
+                            </div>
+                            <div class="summary-card killed">
+                                <h3>✅ Killed</h3>
+                                <div class="big-number">\${summary.killed}</div>
+                                <div class="subtitle">Mutations caught by tests</div>
+                            </div>
+                        </div>
+
+                        <div class="mutations-chart">
+                            <h4>Mutation Results Distribution</h4>
+                            <div class="mutation-bars">
+                                <div class="mutation-bar">
+                                    <span class="mutation-killed">✅ Killed: \${summary.killed} mutations</span>
+                                    <div class="bar"><div class="fill killed" style="width: \${summary.total > 0 ? (summary.killed/summary.total)*100 : 0}%"></div></div>
+                                </div>
+                                <div class="mutation-bar">
+                                    <span class="mutation-survived">🔴 Survived: \${summary.survived} mutations</span>
+                                    <div class="bar"><div class="fill survived" style="width: \${summary.total > 0 ? (summary.survived/summary.total)*100 : 0}%"></div></div>
+                                </div>
+                                <div class="mutation-bar">
+                                    <span class="mutation-timeout">⏰ Timeout: \${summary.timeout || 0} mutations</span>
+                                    <div class="bar"><div class="fill timeout" style="width: \${summary.total > 0 ? ((summary.timeout || 0)/summary.total)*100 : 0}%"></div></div>
+                                </div>
+                                <div class="mutation-bar">
+                                    <span class="mutation-error">❌ Error: \${summary.error || 0} mutations</span>
+                                    <div class="bar"><div class="fill error" style="width: \${summary.total > 0 ? ((summary.error || 0)/summary.total)*100 : 0}%"></div></div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                \`;
+
+                // Add file-by-file breakdown if available
+                if (mutationData.fileResults) {
+                    html += \`
+                        <div class="mutations-files">
+                            <h4>📁 File-by-File Results</h4>
+                            <table class="mutations-table">
+                                <thead>
+                                    <tr><th>File</th><th>Total</th><th>Killed</th><th>Survived</th><th>Score</th><th>Status</th></tr>
+                                </thead>
+                                <tbody>
+                    \`;
+
+                    Object.entries(mutationData.fileResults).forEach(([filePath, fileData]) => {
+                        const fileName = filePath.split('/').pop();
+                        const fileScore = fileData.totalMutations > 0 ? Math.round((fileData.killedMutations / fileData.totalMutations) * 100) : 0;
+                        const fileScoreClass = fileScore >= 80 ? 'excellent' : fileScore >= 60 ? 'good' : fileScore >= 40 ? 'fair' : 'poor';
+                        const statusIcon = fileScore >= 80 ? '🏆' : fileScore >= 60 ? '✅' : fileScore >= 40 ? '⚠️' : '❌';
+
+                        html += \`<tr class="file-row" onclick="toggleFileDetails('\${filePath.replace(/[^a-zA-Z0-9]/g, '_')}')">
+                            <td class="file-name">\${fileName}</td>
+                            <td>\${fileData.totalMutations}</td>
+                            <td class="killed">\${fileData.killedMutations}</td>
+                            <td class="survived">\${fileData.survivedMutations}</td>
+                            <td class="\${fileScoreClass}">\${fileScore}%</td>
+                            <td>\${statusIcon}</td>
+                        </tr>
+                        <tr id="details-\${filePath.replace(/[^a-zA-Z0-9]/g, '_')}" class="file-details" style="display: none;">
+                            <td colspan="6">
+                                <div class="file-mutation-details">
+                                    \${generateFileDetailedMutations(fileData, filePath)}
+                                </div>
+                            </td>
+                        </tr>\`;
+                    });
+
+                    html += \`
+                                </tbody>
+                            </table>
+                        </div>
+                    \`;
+                }
+
+                document.getElementById('mutations-dashboard').innerHTML = html;
+            }
+
+            function generateFileDetailedMutations(fileData, filePath) {
+                if (!fileData.mutations || fileData.mutations.length === 0) {
+                    return '<p>No mutations found for this file.</p>';
+                }
+
+                // Group mutations by line
+                const mutationsByLine = {};
+                fileData.mutations.forEach(mutation => {
+                    const line = mutation.line || 'unknown';
+                    if (!mutationsByLine[line]) {
+                        mutationsByLine[line] = [];
+                    }
+                    mutationsByLine[line].push(mutation);
+                });
+
+                let html = '<div class="mutations-by-line">';
+
+                Object.entries(mutationsByLine).forEach(([line, mutations]) => {
+                    html += \`<div class="line-mutations">
+                        <h5>Line \${line} (\${mutations.length} mutations)</h5>
+                        <div class="mutations-list">\`;
+
+                    mutations.forEach(mutation => {
+                        const statusClass = mutation.status === 'killed' ? 'killed' :
+                                          mutation.status === 'survived' ? 'survived' : 'error';
+                        const statusIcon = mutation.status === 'killed' ? '✅' :
+                                         mutation.status === 'survived' ? '❌' : '⚠️';
+
+                        const testsInfo = mutation.killedBy && mutation.killedBy.length > 0 ?
+                            \`Killed by: \${mutation.killedBy.join(', ')}\` :
+                            mutation.status === 'survived' ? 'No tests killed this mutation' :
+                            mutation.error ? \`Error: \${mutation.error}\` : 'Unknown status';
+
+                        html += \`<div class="mutation-detail \${statusClass}">
+                            <div class="mutation-header">
+                                <span class="mutation-status">\${statusIcon} \${mutation.status.toUpperCase()}</span>
+                                <span class="mutation-type">\${mutation.mutatorName || mutation.type || 'Unknown'}</span>
+                            </div>
+                            <div class="mutation-change">
+                                <strong>Original:</strong> <code>\${mutation.original || 'N/A'}</code><br>
+                                <strong>Mutated:</strong> <code>\${mutation.replacement || 'N/A'}</code>
+                            </div>
+                            <div class="mutation-tests">\${testsInfo}</div>
+                        </div>\`;
+                    });
+
+                    html += '</div></div>';
+                });
+
+                html += '</div>';
+                return html;
+            }
+
+            function toggleFileDetails(fileId) {
+                const details = document.getElementById('details-' + fileId);
+                if (details) {
+                    details.style.display = details.style.display === 'none' ? 'table-row' : 'none';
+                }
+            }
         </script>
     </body>
     </html>`;
+  }
+
+  /**
+   * Get mutation testing results for a specific line
+   */
+  getMutationResultsForLine(filePath, lineNumber) {
+    if (!this.mutationResults || !this.mutationResults.fileResults) {
+      return [];
+    }
+
+    const fileResults = this.mutationResults.fileResults[filePath];
+    if (!fileResults || !fileResults.lineResults) {
+      return [];
+    }
+
+    const lineResults = fileResults.lineResults[lineNumber];
+    if (!lineResults || !lineResults.mutations) {
+      return [];
+    }
+
+    return lineResults.mutations;
+  }
+
+  /**
+   * Generate HTML for mutation testing results
+   */
+  generateMutationResultsHtml(mutationResults, lineNumber) {
+    const totalMutations = mutationResults.length;
+    const killedMutations = mutationResults.filter(m => m.status === 'killed').length;
+    const survivedMutations = mutationResults.filter(m => m.status === 'survived').length;
+    const errorMutations = mutationResults.filter(m => m.status === 'error').length;
+    const timeoutMutations = mutationResults.filter(m => m.status === 'timeout').length;
+
+    const mutationScore = totalMutations > 0 ? Math.round((killedMutations / totalMutations) * 100) : 0;
+    const scoreClass = mutationScore >= 80 ? 'mutation-score-good' :
+                      mutationScore >= 60 ? 'mutation-score-fair' : 'mutation-score-poor';
+
+    let html = `
+                <div class="mutation-results">
+                    <h4>🧬 Mutation Testing Results</h4>
+                    <div class="mutation-summary">
+                        <div class="mutation-score ${scoreClass}">
+                            Score: ${mutationScore}%
+                        </div>
+                        <div class="mutation-stats">
+                            <span class="mutation-stat killed">✅ ${killedMutations} killed</span>
+                            <span class="mutation-stat survived">🔴 ${survivedMutations} survived</span>`;
+
+    if (errorMutations > 0) {
+      html += `<span class="mutation-stat error">❌ ${errorMutations} error</span>`;
+    }
+    if (timeoutMutations > 0) {
+      html += `<span class="mutation-stat timeout">⏰ ${timeoutMutations} timeout</span>`;
+    }
+
+    html += `
+                        </div>
+                    </div>
+                    <div class="mutation-details">`;
+
+    // Group mutations by status
+    const mutationsByStatus = {
+      survived: mutationResults.filter(m => m.status === 'survived'),
+      killed: mutationResults.filter(m => m.status === 'killed'),
+      error: mutationResults.filter(m => m.status === 'error'),
+      timeout: mutationResults.filter(m => m.status === 'timeout')
+    };
+
+    // Show survived mutations first (most important)
+    if (mutationsByStatus.survived.length > 0) {
+      html += `
+                        <div class="mutation-group survived">
+                            <h5>🔴 Survived Mutations (${mutationsByStatus.survived.length})</h5>`;
+      mutationsByStatus.survived.forEach(mutation => {
+        html += `
+                            <div class="mutation-item survived">
+                                <span class="mutation-type">${mutation.mutationType}</span>
+                                <span class="mutation-description">${this.getMutationDescription(mutation)}</span>
+                                <span class="mutation-tests">Tests run: ${mutation.testsRun || 0}</span>
+                            </div>`;
+      });
+      html += `</div>`;
+    }
+
+    // Show killed mutations (collapsed by default)
+    if (mutationsByStatus.killed.length > 0) {
+      html += `
+                        <details class="mutation-group killed">
+                            <summary>✅ Killed Mutations (${mutationsByStatus.killed.length})</summary>`;
+      mutationsByStatus.killed.forEach(mutation => {
+        html += `
+                            <div class="mutation-item killed">
+                                <span class="mutation-type">${mutation.mutationType}</span>
+                                <span class="mutation-description">${this.getMutationDescription(mutation)}</span>
+                                <span class="mutation-tests">Tests run: ${mutation.testsRun || 0}</span>
+                            </div>`;
+      });
+      html += `</details>`;
+    }
+
+    // Show errors if any
+    if (mutationsByStatus.error.length > 0) {
+      html += `
+                        <details class="mutation-group error">
+                            <summary>❌ Error Mutations (${mutationsByStatus.error.length})</summary>`;
+      mutationsByStatus.error.forEach(mutation => {
+        html += `
+                            <div class="mutation-item error">
+                                <span class="mutation-type">${mutation.mutationType}</span>
+                                <span class="mutation-error">${mutation.error || 'Unknown error'}</span>
+                            </div>`;
+      });
+      html += `</details>`;
+    }
+
+    html += `
+                    </div>
+                </div>`;
+
+    return html;
+  }
+
+  /**
+   * Get a human-readable description of a mutation
+   */
+  getMutationDescription(mutation) {
+    const descriptions = {
+      'arithmetic': 'Changed arithmetic operator (+, -, *, /, %)',
+      'comparison': 'Changed comparison operator (==, !=, <, >, <=, >=)',
+      'logical': 'Changed logical operator (&&, ||, !)',
+      'conditional': 'Negated conditional statement',
+      'literals': 'Changed literal value (number, boolean, string)',
+      'returns': 'Changed return value to null',
+      'increments': 'Changed increment/decrement operator (++, --)',
+      'assignment': 'Changed assignment operator (+=, -=, *=, /=)'
+    };
+
+    return descriptions[mutation.mutationType] || `${mutation.mutationType} mutation`;
   }
 }
 

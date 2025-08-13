@@ -164,6 +164,7 @@ global.__TEST_LINEAGE_TRACKER__ = {
   isTracking: isEnabled && isTrackingEnabled,
   isPerformanceTracking: isEnabled && isPerformanceEnabled,
   isQualityTracking: isEnabled && isQualityEnabled,
+  currentTestFile: null, // Track current test file
   config: {
     enabled: isEnabled,
     lineageTracking: isTrackingEnabled,
@@ -186,10 +187,49 @@ function createTestWrapper(originalFn, testType) {
 
     // Wrap the test function with tracking
     const wrappedTestFn = async function(...args) {
+      // Get the current test file path from Jest's context
+      let testFilePath = 'unknown';
+      try {
+        // Method 1: Try expect.getState() - this is the most reliable method
+        const expectState = expect.getState();
+        if (expectState && expectState.testPath) {
+          testFilePath = expectState.testPath;
+        }
+        // Method 2: Try global Jest context
+        else if (global.jasmine && global.jasmine.testPath) {
+          testFilePath = global.jasmine.testPath;
+        }
+        // Method 3: Use stack trace to find test file as fallback
+        else {
+          const stack = new Error().stack;
+
+          // Look for test file patterns in the stack trace
+          const testFilePatterns = [
+            /at.*\/([^\/]+\.test\.[jt]s):/,
+            /at.*\/([^\/]+\.spec\.[jt]s):/,
+            /at.*\/(src\/__tests__\/[^:]+\.test\.[jt]s):/,
+            /at.*\/(src\/__tests__\/[^:]+\.spec\.[jt]s):/,
+            /at.*\/(__tests__\/[^:]+\.test\.[jt]s):/,
+            /at.*\/(__tests__\/[^:]+\.spec\.[jt]s):/
+          ];
+
+          for (const pattern of testFilePatterns) {
+            const match = stack.match(pattern);
+            if (match) {
+              testFilePath = match[1];
+              break;
+            }
+          }
+        }
+      } catch (e) {
+        testFilePath = 'unknown';
+      }
+
       // Start tracking for this specific test
       global.__TEST_LINEAGE_TRACKER__.currentTest = {
         name: testName,
         type: testType,
+        testFile: testFilePath,
         startTime: Date.now(),
         coverage: new Map(),
         qualityMetrics: {
@@ -226,6 +266,7 @@ function createTestWrapper(originalFn, testType) {
         const testData = {
           name: testName,
           type: testType,
+          testFile: global.__TEST_LINEAGE_TRACKER__.currentTest.testFile,
           duration: Date.now() - global.__TEST_LINEAGE_TRACKER__.currentTest.startTime,
           coverage: new Map(global.__TEST_LINEAGE_TRACKER__.currentTest.coverage)
         };
@@ -248,6 +289,7 @@ function createTestWrapper(originalFn, testType) {
         global.__TEST_LINEAGE_TRACKER__.testCoverage.set(testId, {
           name: testName,
           type: testType,
+          testFile: global.__TEST_LINEAGE_TRACKER__.currentTest.testFile,
           duration: Date.now() - global.__TEST_LINEAGE_TRACKER__.currentTest.startTime,
           coverage: new Map(global.__TEST_LINEAGE_TRACKER__.currentTest.coverage),
           failed: true
@@ -610,6 +652,7 @@ function writeTrackingDataToFile() {
     const serializedTests = tests.map(testData => ({
       name: testData.name,
       type: testData.type,
+      testFile: testData.testFile,
       duration: testData.duration,
       coverage: Object.fromEntries(testData.coverage) // Convert Map to Object (includes depth data)
     }));
@@ -654,6 +697,11 @@ if (originalTest) {
 
 // Function for line execution tracking with call depth and performance analysis
 global.__TRACK_LINE_EXECUTION__ = function(filePath, lineNumber, nodeType) {
+  // Skip tracking during mutation testing to avoid conflicts
+  if (process.env.JEST_LINEAGE_MUTATION === 'true') {
+    return;
+  }
+
   if (global.__TEST_LINEAGE_TRACKER__.isTracking &&
       global.__TEST_LINEAGE_TRACKER__.currentTest) {
 

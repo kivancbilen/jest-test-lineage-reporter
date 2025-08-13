@@ -10,6 +10,8 @@
     "test:fast": "JEST_LINEAGE_ENABLED=false jest",
     "test:performance": "JEST_LINEAGE_PERFORMANCE=true JEST_LINEAGE_QUALITY=false jest",
     "test:quality": "JEST_LINEAGE_QUALITY=true JEST_LINEAGE_PERFORMANCE=false jest",
+    "test:mutation": "JEST_LINEAGE_MUTATION=true npm run test:lineage",
+    "test:mutation-only": "JEST_LINEAGE_ENABLED=true JEST_LINEAGE_MUTATION=true JEST_LINEAGE_PERFORMANCE=false JEST_LINEAGE_QUALITY=false jest",
     "validate": "npm run test"
   },
   "keywords": [
@@ -24,7 +26,10 @@
     "test-quality",
     "analytics",
     "dashboard",
-    "html-report"
+    "html-report",
+    "mutation-testing",
+    "mutation-analysis",
+    "test-effectiveness"
   ],
   "author": "Jest Test Lineage Reporter Team",
   "license": "MIT",
@@ -52,13 +57,14 @@
   ],
   "devDependencies": {
     "@babel/core": "^7.23.0",
+    "@babel/plugin-transform-modules-commonjs": "^7.27.1",
     "@babel/preset-env": "^7.23.0",
     "@babel/preset-typescript": "^7.23.0",
     "@babel/types": "^7.23.0",
     "@types/babel__core": "^7.20.0",
     "@types/istanbul-lib-coverage": "^2.0.6",
     "@types/jest": "^30.0.0",
-    "babel-jest": "^29.7.0",
+    "babel-jest": "^30.0.5",
     "jest": "^30.0.5",
     "ts-jest": "^29.4.0",
     "ts-node": "^10.9.2",

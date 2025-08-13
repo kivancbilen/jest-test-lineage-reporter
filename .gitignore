@@ -157,3 +157,6 @@ lib/
 # Package files
 *.tgz
 *.tar.gz
+
+# Debug files
+.mutation-test-debug/
