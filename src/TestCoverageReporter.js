@@ -2902,8 +2902,6 @@ class TestCoverageReporter {
             function generateMutationsDashboard() {
                 let mutationData = ${JSON.stringify(this.mutationResults || {})};
 
-
-
                 if (!mutationData || mutationData.totalMutations === undefined) {
                     document.getElementById('mutations-dashboard').innerHTML = \`
                         <div class="no-data">

@@ -105,8 +105,10 @@ class MutationTester {
         if (test.coverage) {
           Object.keys(test.coverage).forEach((lineKey) => {
             // Parse line key: "file.ts:lineNumber"
-            const [filePath, lineNumber] = lineKey.split(":");
-            if (!lineNumber || lineNumber === "depth") return;
+            const [filePath, lineNumber, ...suffixes] = lineKey.split(":");
+
+            // Skip metadata entries (depth, performance, meta) - only process basic line coverage
+            if (!lineNumber || suffixes.length > 0) return;
 
             if (!processed[filePath]) {
               processed[filePath] = {};
