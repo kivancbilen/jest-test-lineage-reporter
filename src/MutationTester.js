@@ -150,7 +150,7 @@ class MutationTester {
           filePath,
           parseInt(lineNumber)
         );
-        const mutationTypes = this.getPossibleMutationTypes(sourceCode);
+        const mutationTypes = this.getPossibleMutationTypes(sourceCode, filePath, parseInt(lineNumber));
         totalMutationsCount += mutationTypes.length;
       }
     }
@@ -280,7 +280,7 @@ class MutationTester {
 
     // Get the source code line to determine possible mutations
     const sourceCode = this.getSourceCodeLine(filePath, lineNumber);
-    const mutationTypes = this.getPossibleMutationTypes(sourceCode);
+    const mutationTypes = this.getPossibleMutationTypes(sourceCode, filePath, lineNumber);
 
     let currentMutationIndex = startMutationIndex;
 
@@ -295,6 +295,12 @@ class MutationTester {
         currentMutationIndex,
         totalMutations
       );
+
+      // Skip mutations that couldn't be applied (null result)
+      if (mutationResult === null) {
+        currentMutationIndex--; // Don't count skipped mutations
+        continue;
+      }
 
       lineResults.mutations.push(mutationResult);
       lineResults.totalMutations++;
@@ -336,9 +342,9 @@ class MutationTester {
 
     // Log progress with counter and percentage
     const fileName = filePath.split("/").pop();
-    const percentage = Math.round(
+    const percentage = totalMutations > 0 ? Math.round(
       (currentMutationIndex / totalMutations) * 100
-    );
+    ) : 0;
     console.log(
       `🔧 Instrumenting: ${filePath} (${currentMutationIndex}/${totalMutations} - ${percentage}%) [${fileName}:${lineNumber} ${mutationType}]`
     );
@@ -358,28 +364,10 @@ class MutationTester {
       const mutatedCodeLine = mutatedLines[lineNumber - 1] || '';
 
       if (originalCodeLine.trim() === mutatedCodeLine.trim()) {
-        console.log(`⚠️ Mutation did not change the code at ${filePath}:${lineNumber} (${mutationType})`);
-        console.log(`   Line content: ${originalCodeLine.trim()}`);
-
-        // Restore the original file
+        // Mutation couldn't be applied - this should have been caught during validation
+        // Silently skip this mutation and restore the file
         this.restoreFile(filePath);
-
-        return {
-          id: mutationId,
-          filePath,
-          line: lineNumber,
-          lineNumber,
-          mutationType,
-          mutatorName: mutationType,
-          type: mutationType,
-          status: 'error',
-          original: originalCodeLine.trim(),
-          replacement: 'NO_CHANGE',
-          testsRun: 0,
-          killedBy: [],
-          executionTime: 0,
-          error: 'Mutation did not change the code - mutation operator not applicable to this line',
-        };
+        return null; // Return null to indicate this mutation should be skipped
       }
 
       let testResult;
@@ -399,6 +387,7 @@ class MutationTester {
           this.getTestFileFromTestName(test.testName)
         );
         console.log(`🔍 Debug mutation created: ${mutatedFilePath}`);
+        // In debug mode, files are preserved, so no cleanup needed
       } else {
         // Normal mode: Run tests and check if mutation is killed
         testFiles = [
@@ -487,6 +476,13 @@ class MutationTester {
       console.error(`❌ Error during mutation ${mutationId}:`, error.message);
       if (this.config.enableDebugLogging) {
         console.error(`Full error stack:`, error.stack);
+      }
+
+      // Ensure file is restored even if an error occurs
+      try {
+        this.restoreFile(filePath);
+      } catch (restoreError) {
+        console.error(`❌ Failed to restore file after error:`, restoreError.message);
       }
 
       return {
@@ -598,7 +594,8 @@ class MutationTester {
       // Create mutation plugin with specific line and mutation type
       const mutationPlugin = createMutationPlugin(lineNumber, mutationType);
 
-      // Transform code using Babel with the mutation plugin
+      // Transform code using Babel with ONLY the mutation plugin
+      // Do NOT include lineage tracking or other plugins during mutation testing
       const result = babel.transformSync(code, {
         plugins: [mutationPlugin],
         filename: filePath,
@@ -607,6 +604,11 @@ class MutationTester {
           allowImportExportEverywhere: true,
           plugins: ["typescript", "jsx"],
         },
+        // Explicitly disable all other transformations
+        presets: [],
+        // Ensure no other plugins are loaded from babel.config.js
+        babelrc: false,
+        configFile: false,
       });
 
       return result?.code || null;
@@ -639,7 +641,10 @@ class MutationTester {
         env: {
           ...process.env,
           NODE_ENV: "test",
+          JEST_LINEAGE_MUTATION: "true", // Disable lineage tracking during mutation testing
           JEST_LINEAGE_MUTATION_TESTING: "false", // Disable mutation testing during mutation testing
+          JEST_LINEAGE_ENABLED: "false", // Disable all lineage tracking
+          JEST_LINEAGE_TRACKING: "false", // Disable lineage tracking
           TS_NODE_TRANSPILE_ONLY: "true", // Disable TypeScript type checking
           TS_NODE_TYPE_CHECK: "false", // Disable TypeScript type checking
         },
@@ -675,11 +680,11 @@ class MutationTester {
   }
 
   /**
-   * Clean up mutated file by restoring original
+   * Restore a file to its original state (synchronous)
    */
-  async cleanupMutatedFile(filePath) {
+  restoreFile(filePath) {
     if (this.config.debugMutations) {
-      // In debug mode, don't clean up - files are preserved for inspection
+      // In debug mode, don't restore original files
       return;
     }
 
@@ -689,10 +694,11 @@ class MutationTester {
         // Restore from backup file
         fs.writeFileSync(filePath, fs.readFileSync(backupPath, "utf8"));
         fs.unlinkSync(backupPath);
+        console.log(`✅ Restored ${filePath} from backup`);
       } else if (this.originalFileContents.has(filePath)) {
         // Fallback: restore from stored original content
         fs.writeFileSync(filePath, this.originalFileContents.get(filePath));
-        console.log(`⚠️ Restored ${filePath} from memory (backup file missing)`);
+        console.log(`✅ Restored ${filePath} from memory (backup file missing)`);
       } else {
         console.error(`❌ Cannot restore ${filePath}: no backup or stored content found`);
       }
@@ -714,11 +720,26 @@ class MutationTester {
   }
 
   /**
-   * Get source code for a specific line
+   * Clean up mutated file by restoring original
+   */
+  async cleanupMutatedFile(filePath) {
+    this.restoreFile(filePath);
+  }
+
+  /**
+   * Get source code for a specific line from the original (unmutated) file
    */
   getSourceCodeLine(filePath, lineNumber) {
     try {
-      const sourceCode = fs.readFileSync(filePath, "utf8");
+      // Use stored original content if available (during mutation testing)
+      let sourceCode;
+      if (this.originalFileContents.has(filePath)) {
+        sourceCode = this.originalFileContents.get(filePath);
+      } else {
+        // Fallback to reading from disk (for initial analysis)
+        sourceCode = fs.readFileSync(filePath, "utf8");
+      }
+
       const lines = sourceCode.split("\n");
       return lines[lineNumber - 1] || "";
     } catch (error) {
@@ -727,34 +748,76 @@ class MutationTester {
   }
 
   /**
-   * Determine possible mutation types for a line of code
+   * Determine possible mutation types for a line of code using AST analysis
    */
-  getPossibleMutationTypes(sourceCode) {
-    const types = [];
+  getPossibleMutationTypes(sourceCode, filePath, lineNumber) {
+    if (!sourceCode || sourceCode.trim() === '') {
+      return [];
+    }
 
-    // More precise detection to avoid false positives
-    if (/[+\-*/%](?![=<>])/.test(sourceCode)) types.push("arithmetic");
-    if (/[<>]=?|[!=]==?/.test(sourceCode)) types.push("comparison");
-    if (/&&|\|\|/.test(sourceCode)) types.push("logical");
-    if (/\bif\b|\bwhile\b|\bfor\b/.test(sourceCode)) types.push("conditional");
+    try {
+      const babel = require("@babel/core");
+      const { createMutationPlugin } = require("./babel-plugin-mutation-tester");
 
-    // Only detect returns for simple literal returns
-    if (/\breturn\s+(true|false|null|undefined|\d+)\s*;/.test(sourceCode))
-      types.push("returns");
+      // Test each mutation type to see if it can be applied
+      const possibleTypes = [];
+      const mutationTypes = ['arithmetic', 'comparison', 'logical', 'conditional', 'returns', 'literals', 'increments', 'assignment'];
 
-    // Only detect literals that are not in comparisons or assignments
-    if (
-      /\b(true|false|null|undefined)\b(?!\s*[=!<>])/.test(sourceCode) ||
-      /""|''/.test(sourceCode)
-    )
-      types.push("literals");
+      for (const mutationType of mutationTypes) {
+        if (this.canApplyMutation(sourceCode, filePath, lineNumber, mutationType)) {
+          possibleTypes.push(mutationType);
+        }
+      }
 
-    if (/\+\+|--/.test(sourceCode)) types.push("increments");
+      return possibleTypes;
+    } catch (error) {
+      // If AST analysis fails, return empty array to skip this line
+      return [];
+    }
+  }
 
-    // Only detect actual assignment operators, not comparisons
-    if (/[+\-*/%]=(?!=)/.test(sourceCode)) types.push("assignment");
+  /**
+   * Test if a specific mutation type can be applied to a line
+   */
+  canApplyMutation(sourceCode, filePath, lineNumber, mutationType) {
+    try {
+      const babel = require("@babel/core");
+      const { createMutationPlugin } = require("./babel-plugin-mutation-tester");
+      const fs = require("fs");
 
-    return types.length > 0 ? types : ["arithmetic"]; // Default fallback
+      // Read the full file content for proper AST parsing
+      const fullFileContent = fs.readFileSync(filePath, "utf8");
+
+      // Create a test mutation plugin
+      const mutationPlugin = createMutationPlugin(lineNumber, mutationType);
+
+      // Try to transform the full file
+      const result = babel.transformSync(fullFileContent, {
+        plugins: [mutationPlugin],
+        filename: filePath,
+        parserOpts: {
+          sourceType: "module",
+          allowImportExportEverywhere: true,
+          plugins: ["typescript", "jsx"],
+        },
+        babelrc: false,
+        configFile: false,
+      });
+
+      // Check if the mutation was actually applied by comparing the specific line
+      if (result?.code) {
+        const originalLines = fullFileContent.split('\n');
+        const mutatedLines = result.code.split('\n');
+        const originalLine = originalLines[lineNumber - 1] || '';
+        const mutatedLine = mutatedLines[lineNumber - 1] || '';
+        return originalLine.trim() !== mutatedLine.trim();
+      }
+
+      return false;
+    } catch (error) {
+      // If transformation fails, this mutation type can't be applied
+      return false;
+    }
   }
 
   /**
