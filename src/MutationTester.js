@@ -51,22 +51,25 @@ class MutationTester {
    */
   setupCleanupHandlers() {
     // Handle process interruption (Ctrl+C)
-    process.on('SIGINT', () => {
-      console.log('\n🛑 Mutation testing interrupted. Cleaning up...');
+    process.on("SIGINT", () => {
+      console.log("\n🛑 Mutation testing interrupted. Cleaning up...");
       this.emergencyCleanup();
       process.exit(1);
     });
 
     // Handle process termination
-    process.on('SIGTERM', () => {
-      console.log('\n🛑 Mutation testing terminated. Cleaning up...');
+    process.on("SIGTERM", () => {
+      console.log("\n🛑 Mutation testing terminated. Cleaning up...");
       this.emergencyCleanup();
       process.exit(1);
     });
 
     // Handle uncaught exceptions
-    process.on('uncaughtException', (error) => {
-      console.error('\n❌ Uncaught exception during mutation testing:', error.message);
+    process.on("uncaughtException", (error) => {
+      console.error(
+        "\n❌ Uncaught exception during mutation testing:",
+        error.message
+      );
       this.emergencyCleanup();
       process.exit(1);
     });
@@ -95,20 +98,49 @@ class MutationTester {
   }
 
   /**
+   * Set lineage data directly (used when data is passed from TestCoverageReporter)
+   */
+  setLineageData(lineageData) {
+    this.lineageData = lineageData;
+    console.log(
+      `📊 Set lineage data for ${Object.keys(this.lineageData).length} files`
+    );
+    return true;
+  }
+
+  /**
    * Process raw lineage data into a more usable format
    */
   processLineageData(rawData) {
     const processed = {};
 
     if (rawData.tests) {
-      rawData.tests.forEach((test) => {
+      console.log(
+        `🔍 Processing ${rawData.tests.length} tests for mutation testing...`
+      );
+
+      rawData.tests.forEach((test, testIndex) => {
         if (test.coverage) {
-          Object.keys(test.coverage).forEach((lineKey) => {
+          const coverageKeys = Object.keys(test.coverage);
+          console.log(
+            `  Test ${testIndex + 1}: "${test.name}" has ${
+              coverageKeys.length
+            } coverage entries`
+          );
+
+          coverageKeys.forEach((lineKey) => {
             // Parse line key: "file.ts:lineNumber"
             const [filePath, lineNumber, ...suffixes] = lineKey.split(":");
 
             // Skip metadata entries (depth, performance, meta) - only process basic line coverage
-            if (!lineNumber || suffixes.length > 0) return;
+            if (!lineNumber || suffixes.length > 0) {
+              // console.log(`    Skipping metadata entry: ${lineKey}`);
+              return;
+            }
+
+            console.log(
+              `    Processing coverage: ${lineKey} = ${test.coverage[lineKey]}`
+            );
 
             if (!processed[filePath]) {
               processed[filePath] = {};
@@ -125,9 +157,21 @@ class MutationTester {
               executionCount: test.coverage[lineKey],
             });
           });
+        } else {
+          console.log(
+            `  Test ${testIndex + 1}: "${test.name}" has no coverage data`
+          );
         }
       });
     }
+
+    console.log(
+      `🎯 Processed lineage data for ${Object.keys(processed).length} files:`
+    );
+    Object.keys(processed).forEach((filePath) => {
+      const lineCount = Object.keys(processed[filePath]).length;
+      console.log(`  ${filePath}: ${lineCount} lines`);
+    });
 
     return processed;
   }
@@ -152,7 +196,11 @@ class MutationTester {
           filePath,
           parseInt(lineNumber)
         );
-        const mutationTypes = this.getPossibleMutationTypes(sourceCode, filePath, parseInt(lineNumber));
+        const mutationTypes = this.getPossibleMutationTypes(
+          sourceCode,
+          filePath,
+          parseInt(lineNumber)
+        );
         totalMutationsCount += mutationTypes.length;
       }
     }
@@ -282,7 +330,11 @@ class MutationTester {
 
     // Get the source code line to determine possible mutations
     const sourceCode = this.getSourceCodeLine(filePath, lineNumber);
-    const mutationTypes = this.getPossibleMutationTypes(sourceCode, filePath, lineNumber);
+    const mutationTypes = this.getPossibleMutationTypes(
+      sourceCode,
+      filePath,
+      lineNumber
+    );
 
     let currentMutationIndex = startMutationIndex;
 
@@ -344,9 +396,10 @@ class MutationTester {
 
     // Log progress with counter and percentage
     const fileName = filePath.split("/").pop();
-    const percentage = totalMutations > 0 ? Math.round(
-      (currentMutationIndex / totalMutations) * 100
-    ) : 0;
+    const percentage =
+      totalMutations > 0
+        ? Math.round((currentMutationIndex / totalMutations) * 100)
+        : 0;
     console.log(
       `🔧 Instrumenting: ${filePath} (${currentMutationIndex}/${totalMutations} - ${percentage}%) [${fileName}:${lineNumber} ${mutationType}]`
     );
@@ -361,9 +414,9 @@ class MutationTester {
 
       // Check if the mutation actually changed the code
       const originalCodeLine = this.getSourceCodeLine(filePath, lineNumber);
-      const mutatedFileContent = fs.readFileSync(filePath, 'utf8');
-      const mutatedLines = mutatedFileContent.split('\n');
-      const mutatedCodeLine = mutatedLines[lineNumber - 1] || '';
+      const mutatedFileContent = fs.readFileSync(filePath, "utf8");
+      const mutatedLines = mutatedFileContent.split("\n");
+      const mutatedCodeLine = mutatedLines[lineNumber - 1] || "";
 
       if (originalCodeLine.trim() === mutatedCodeLine.trim()) {
         // Mutation couldn't be applied - this should have been caught during validation
@@ -385,29 +438,36 @@ class MutationTester {
           error: null,
         };
         status = "debug";
-        testFiles = tests.map((test) =>
+        const testInfo = tests.map((test) =>
           this.getTestFileFromTestName(test.testName)
         );
+        testFiles = testInfo.map(info => info.testFile);
         console.log(`🔍 Debug mutation created: ${mutatedFilePath}`);
         // In debug mode, files are preserved, so no cleanup needed
       } else {
         // Normal mode: Run tests and check if mutation is killed
-        testFiles = [
-          ...new Set(
-            tests.map((test) => this.getTestFileFromTestName(test.testName))
-          ),
-        ];
+        const testInfo = tests.map((test) =>
+          this.getTestFileFromTestName(test.testName)
+        );
+
+        // Extract unique test files and collect test names
+        const uniqueTestFiles = [...new Set(testInfo.map(info => info.testFile))];
+        const testNames = testInfo.map(info => info.testName);
 
         try {
-          testResult = await this.runTargetedTests(testFiles);
+          testResult = await this.runTargetedTests(uniqueTestFiles, testNames);
           status = testResult.success ? "survived" : "killed";
         } catch (testError) {
-          console.error(`❌ Error running tests for mutation ${mutationId}:`, testError.message);
+          console.error(
+            `❌ Error running tests for mutation ${mutationId}:`,
+            testError.message
+          );
           testResult = {
             success: false,
             executionTime: 0,
             output: "",
             error: testError.message,
+            jestArgs: testError.jestArgs || [],
           };
           status = "error";
         } finally {
@@ -422,18 +482,24 @@ class MutationTester {
       console.log(`  Status: ${status}`);
       console.log(`  Error: ${testResult.error || "none"}`);
       if (testResult.output && testResult.output.length > 0) {
-        console.log(
-          `  Output snippet: ${testResult.output.substring(0, 200)}...`
-        );
+        console.log(`  Output snippet: ${testResult.output}...`);
+      }
+      if (testResult.jestArgs) {
+        console.log(`  Jest args: ${testResult.jestArgs.join(" ")}`);
       }
 
       // Get original and mutated code for display
       const originalCode = this.getSourceCodeLine(filePath, lineNumber);
-      const mutatedCode = this.getMutatedCodePreview(originalCode, mutationType);
+      const mutatedCode = this.getMutatedCodePreview(
+        originalCode,
+        mutationType
+      );
 
       // Check if mutation actually changed the code
       if (originalCode.trim() === mutatedCode.trim()) {
-        console.log(`⚠️ Mutation failed to change code at ${filePath}:${lineNumber} (${mutationType})`);
+        console.log(
+          `⚠️ Mutation failed to change code at ${filePath}:${lineNumber} (${mutationType})`
+        );
         console.log(`   Original: ${originalCode.trim()}`);
         console.log(`   Expected mutation type: ${mutationType}`);
 
@@ -445,18 +511,19 @@ class MutationTester {
           mutationType,
           mutatorName: mutationType,
           type: mutationType,
-          status: 'error',
+          status: "error",
           original: originalCode.trim(),
-          replacement: 'MUTATION_FAILED',
+          replacement: "MUTATION_FAILED",
           testsRun: 0,
           killedBy: [],
           executionTime: 0,
-          error: 'Mutation failed to change the code - no mutation was applied',
+          error: "Mutation failed to change the code - no mutation was applied",
         };
       }
 
       // Determine which tests killed this mutation (if any)
-      const killedBy = status === 'killed' ? this.getKillingTests(testResult, tests) : [];
+      const killedBy =
+        status === "killed" ? this.getKillingTests(testResult, tests) : [];
 
       return {
         id: mutationId,
@@ -484,7 +551,10 @@ class MutationTester {
       try {
         this.restoreFile(filePath);
       } catch (restoreError) {
-        console.error(`❌ Failed to restore file after error:`, restoreError.message);
+        console.error(
+          `❌ Failed to restore file after error:`,
+          restoreError.message
+        );
       }
 
       return {
@@ -615,27 +685,43 @@ class MutationTester {
 
       return result?.code || null;
     } catch (error) {
-      console.error(`Babel transformation error for ${filePath}:${lineNumber}:`, error.message);
+      console.error(
+        `Babel transformation error for ${filePath}:${lineNumber}:`,
+        error.message
+      );
       return null;
     }
   }
 
   /**
-   * Run targeted tests for specific test files
+   * Run targeted tests for specific test files and test names
    */
-  async runTargetedTests(testFiles) {
+  async runTargetedTests(testFiles, testNames = null) {
     return new Promise((resolve) => {
       const startTime = Date.now();
 
-      // Build Jest command to run only specific test files
+      // Build Jest command to run only specific test files and optionally specific test names
       const jestArgs = [
         "--testPathPatterns=" + testFiles.join("|"),
-        "--silent",
         "--no-coverage",
         "--bail", // Stop on first failure
         "--no-cache", // Avoid cache issues with mutated files
         "--forceExit", // Ensure Jest exits cleanly
+        "--runInBand", // Run tests in the main thread to avoid IPC issues
       ];
+
+      // If specific test names are provided, add testNamePattern to run only those tests
+      if (testNames && testNames.length > 0) {
+        // Escape special regex characters in test names and join with OR operator
+        const escapedTestNames = testNames.map(name =>
+          name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+        );
+        const testNamePattern = `(${escapedTestNames.join('|')})`;
+        jestArgs.push(`--testNamePattern=${testNamePattern}`);
+        console.log(`🎯 Running specific tests: ${testNames.join(', ')}`);
+      } else {
+        console.log(`📁 Running all tests in files: ${testFiles.join(', ')}`);
+      }
 
       const jest = spawn("jest", [...jestArgs], {
         stdio: "pipe",
@@ -643,10 +729,13 @@ class MutationTester {
         env: {
           ...process.env,
           NODE_ENV: "test",
-          JEST_LINEAGE_MUTATION: "true", // Disable lineage tracking during mutation testing
+          JEST_LINEAGE_MUTATION: "false", // Disable mutation testing mode to allow normal test execution
           JEST_LINEAGE_MUTATION_TESTING: "false", // Disable mutation testing during mutation testing
           JEST_LINEAGE_ENABLED: "false", // Disable all lineage tracking
           JEST_LINEAGE_TRACKING: "false", // Disable lineage tracking
+          JEST_LINEAGE_PERFORMANCE: "false", // Disable performance tracking
+          JEST_LINEAGE_QUALITY: "false", // Disable quality tracking
+          JEST_LINEAGE_MERGE: "false", // Ensure no merging with existing data
           TS_NODE_TRANSPILE_ONLY: "true", // Disable TypeScript type checking
           TS_NODE_TYPE_CHECK: "false", // Disable TypeScript type checking
         },
@@ -668,6 +757,7 @@ class MutationTester {
           executionTime,
           output,
           error: code !== 0 ? `Jest exited with code ${code}` : null,
+          jestArgs,
         });
       });
 
@@ -700,9 +790,13 @@ class MutationTester {
       } else if (this.originalFileContents.has(filePath)) {
         // Fallback: restore from stored original content
         fs.writeFileSync(filePath, this.originalFileContents.get(filePath));
-        console.log(`✅ Restored ${filePath} from memory (backup file missing)`);
+        console.log(
+          `✅ Restored ${filePath} from memory (backup file missing)`
+        );
       } else {
-        console.error(`❌ Cannot restore ${filePath}: no backup or stored content found`);
+        console.error(
+          `❌ Cannot restore ${filePath}: no backup or stored content found`
+        );
       }
     } catch (error) {
       console.error(`❌ Error restoring ${filePath}:`, error.message);
@@ -713,7 +807,10 @@ class MutationTester {
           fs.writeFileSync(filePath, this.originalFileContents.get(filePath));
           console.log(`✅ Fallback restoration successful for ${filePath}`);
         } catch (fallbackError) {
-          console.error(`❌ Fallback restoration failed for ${filePath}:`, fallbackError.message);
+          console.error(
+            `❌ Fallback restoration failed for ${filePath}:`,
+            fallbackError.message
+          );
         }
       }
     }
@@ -753,25 +850,15 @@ class MutationTester {
    * Determine possible mutation types for a line of code using AST analysis
    */
   getPossibleMutationTypes(sourceCode, filePath, lineNumber) {
-    if (!sourceCode || sourceCode.trim() === '') {
+    if (!sourceCode || sourceCode.trim() === "") {
       return [];
     }
 
     try {
-      const babel = require("@babel/core");
-      const { createMutationPlugin } = require("./babel-plugin-mutation-tester");
-
-      // Test each mutation type to see if it can be applied
-      const possibleTypes = [];
-      const mutationTypes = ['arithmetic', 'comparison', 'logical', 'conditional', 'returns', 'literals', 'increments', 'assignment'];
-
-      for (const mutationType of mutationTypes) {
-        if (this.canApplyMutation(sourceCode, filePath, lineNumber, mutationType)) {
-          possibleTypes.push(mutationType);
-        }
-      }
-
-      return possibleTypes;
+      const {
+        getPossibleMutations,
+      } = require("./babel-plugin-mutation-tester");
+      return getPossibleMutations(filePath, lineNumber, sourceCode);
     } catch (error) {
       // If AST analysis fails, return empty array to skip this line
       return [];
@@ -784,7 +871,9 @@ class MutationTester {
   canApplyMutation(sourceCode, filePath, lineNumber, mutationType) {
     try {
       const babel = require("@babel/core");
-      const { createMutationPlugin } = require("./babel-plugin-mutation-tester");
+      const {
+        createMutationPlugin,
+      } = require("./babel-plugin-mutation-tester");
       const fs = require("fs");
 
       // Read the full file content for proper AST parsing
@@ -808,10 +897,10 @@ class MutationTester {
 
       // Check if the mutation was actually applied by comparing the specific line
       if (result?.code) {
-        const originalLines = fullFileContent.split('\n');
-        const mutatedLines = result.code.split('\n');
-        const originalLine = originalLines[lineNumber - 1] || '';
-        const mutatedLine = mutatedLines[lineNumber - 1] || '';
+        const originalLines = fullFileContent.split("\n");
+        const mutatedLines = result.code.split("\n");
+        const originalLine = originalLines[lineNumber - 1] || "";
+        const mutatedLine = mutatedLines[lineNumber - 1] || "";
         return originalLine.trim() !== mutatedLine.trim();
       }
 
@@ -823,23 +912,31 @@ class MutationTester {
   }
 
   /**
-   * Extract test file path from test name using lineage data
+   * Extract test file path and test name from test name using lineage data
    */
   getTestFileFromTestName(testName) {
     // Search through lineage data to find the test file for this test name
-    for (const [filePath, lines] of Object.entries(this.lineageData)) {
-      for (const [lineNumber, tests] of Object.entries(lines)) {
+    for (const [, lines] of Object.entries(this.lineageData)) {
+      for (const [, tests] of Object.entries(lines)) {
         for (const test of tests) {
           if (test.testName === testName && test.testFile) {
-            return test.testFile;
+            return {
+              testFile: test.testFile,
+              testName: test.testName
+            };
           }
         }
       }
     }
 
     // Fallback to calculator test if not found (for backward compatibility)
-    console.warn(`⚠️ Could not find test file for test "${testName}", using fallback`);
-    return "src/__tests__/calculator.test.ts";
+    console.warn(
+      `⚠️ Could not find test file for test "${testName}", using fallback`
+    );
+    return {
+      testFile: "src/__tests__/calculator.test.ts",
+      testName: testName
+    };
   }
 
   /**
@@ -890,47 +987,66 @@ class MutationTester {
     try {
       // Simple text-based mutations for preview
       switch (mutationType) {
-        case 'arithmetic':
-          return originalCode.replace(/\+/g, '-').replace(/\*/g, '/').replace(/-/g, '+').replace(/\//g, '*');
-        case 'logical':
-          return originalCode.replace(/&&/g, '||').replace(/\|\|/g, '&&');
-        case 'conditional':
+        case "arithmetic":
+          return originalCode
+            .replace(/\+/g, "-")
+            .replace(/\*/g, "/")
+            .replace(/-/g, "+")
+            .replace(/\//g, "*");
+        case "logical":
+          return originalCode.replace(/&&/g, "||").replace(/\|\|/g, "&&");
+        case "conditional":
           // For conditional mutations, we negate the entire condition
           // This is a simplified preview - the actual mutation is more complex
-          if (originalCode.includes('if (') || originalCode.includes('} else if (')) {
-            return originalCode.replace(/if\s*\(([^)]+)\)/g, 'if (!($1))').replace(/else if\s*\(([^)]+)\)/g, 'else if (!($1))');
+          if (
+            originalCode.includes("if (") ||
+            originalCode.includes("} else if (")
+          ) {
+            return originalCode
+              .replace(/if\s*\(([^)]+)\)/g, "if (!($1))")
+              .replace(/else if\s*\(([^)]+)\)/g, "else if (!($1))");
           }
           return `${originalCode} /* condition negated */`;
-        case 'comparison':
+        case "comparison":
           let result = originalCode;
           // Handle strict equality/inequality first to avoid conflicts
-          result = result.replace(/===/g, '__TEMP_STRICT_EQ__');
-          result = result.replace(/!==/g, '__TEMP_STRICT_NEQ__');
-          result = result.replace(/>=/g, '__TEMP_GTE__');
-          result = result.replace(/<=/g, '__TEMP_LTE__');
+          result = result.replace(/===/g, "__TEMP_STRICT_EQ__");
+          result = result.replace(/!==/g, "__TEMP_STRICT_NEQ__");
+          result = result.replace(/>=/g, "__TEMP_GTE__");
+          result = result.replace(/<=/g, "__TEMP_LTE__");
 
           // Now handle simple operators
-          result = result.replace(/>/g, '<');
-          result = result.replace(/</g, '>');
-          result = result.replace(/==/g, '!=');
-          result = result.replace(/!=/g, '==');
+          result = result.replace(/>/g, "<");
+          result = result.replace(/</g, ">");
+          result = result.replace(/==/g, "!=");
+          result = result.replace(/!=/g, "==");
 
           // Restore complex operators with mutations
-          result = result.replace(/__TEMP_STRICT_EQ__/g, '!==');
-          result = result.replace(/__TEMP_STRICT_NEQ__/g, '===');
-          result = result.replace(/__TEMP_GTE__/g, '<');
-          result = result.replace(/__TEMP_LTE__/g, '>');
+          result = result.replace(/__TEMP_STRICT_EQ__/g, "!==");
+          result = result.replace(/__TEMP_STRICT_NEQ__/g, "===");
+          result = result.replace(/__TEMP_GTE__/g, "<");
+          result = result.replace(/__TEMP_LTE__/g, ">");
 
           return result;
-        case 'returns':
-          return originalCode.replace(/return\s+([^;]+);?/g, 'return null;');
-        case 'literals':
-          return originalCode.replace(/true/g, 'false').replace(/false/g, 'true').replace(/\d+/g, '0');
+        case "returns":
+          return originalCode.replace(/return\s+([^;]+);?/g, "return null;");
+        case "literals":
+          return originalCode
+            .replace(/true/g, "false")
+            .replace(/false/g, "true")
+            .replace(/\d+/g, "0");
         default:
-          return `${originalCode} /* mutated */`;
+          // Don't apply invalid mutations - return original code unchanged
+          console.warn(
+            `⚠️ Unknown mutation type '${mutationType}' - skipping mutation`
+          );
+          return originalCode;
       }
     } catch (error) {
-      return `${originalCode} /* mutation error */`;
+      console.warn(
+        `⚠️ Mutation error for type '${mutationType}': ${error.message}`
+      );
+      return originalCode;
     }
   }
 
@@ -939,15 +1055,32 @@ class MutationTester {
    */
   getKillingTests(testResult, tests) {
     // If the test failed, it means the mutation was killed
-    // We can try to extract test names from the output
-    if (testResult.success === false && testResult.output) {
+    if (testResult.success === false) {
       const killedBy = [];
-      tests.forEach(test => {
-        if (testResult.output.includes(test.testName)) {
-          killedBy.push(test.testName);
-        }
-      });
-      return killedBy.length > 0 ? killedBy : ['Unknown test'];
+
+      // Try to extract test names from the output
+      if (testResult.output) {
+        tests.forEach((test) => {
+          // Try multiple patterns to find test names in output
+          const testName = test.testName;
+          if (
+            testResult.output.includes(testName) ||
+            testResult.output.includes(`"${testName}"`) ||
+            testResult.output.includes(`'${testName}'`) ||
+            testResult.output.includes(testName.replace(/\s+/g, " "))
+          ) {
+            killedBy.push(testName);
+          }
+        });
+      }
+
+      // If we couldn't identify specific tests, return the test names from lineage data
+      // since we know these tests cover this line
+      if (killedBy.length === 0 && tests.length > 0) {
+        return tests.map((test) => test.testName);
+      }
+
+      return killedBy;
     }
     return [];
   }
@@ -956,7 +1089,7 @@ class MutationTester {
    * Emergency cleanup - restore all files immediately (synchronous)
    */
   emergencyCleanup() {
-    console.log('🔧 Restoring original files...');
+    console.log("🔧 Restoring original files...");
 
     // Restore from backup files first
     for (const filePath of this.tempFiles) {
@@ -980,20 +1113,23 @@ class MutationTester {
           console.log(`✅ Restored from memory: ${filePath}`);
         }
       } catch (error) {
-        console.error(`❌ Failed to restore from memory ${filePath}:`, error.message);
+        console.error(
+          `❌ Failed to restore from memory ${filePath}:`,
+          error.message
+        );
       }
     }
 
     this.tempFiles.clear();
     this.originalFileContents.clear();
-    console.log('🎯 Emergency cleanup completed');
+    console.log("🎯 Emergency cleanup completed");
   }
 
   /**
    * Clean up all temporary files
    */
   async cleanup() {
-    console.log('🧹 Starting mutation testing cleanup...');
+    console.log("🧹 Starting mutation testing cleanup...");
 
     for (const filePath of this.tempFiles) {
       await this.cleanupMutatedFile(filePath);
@@ -1011,7 +1147,7 @@ class MutationTester {
       );
     }
 
-    console.log('✅ Mutation testing cleanup completed');
+    console.log("✅ Mutation testing cleanup completed");
   }
 }
 

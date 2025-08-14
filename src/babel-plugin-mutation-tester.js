@@ -140,6 +140,19 @@ function createMutationPlugin(targetLine, mutationType, config = {}) {
           logMutation(state, 'while condition → !(condition)');
         },
 
+        // FOR LOOPS
+        ForStatement(path, state) {
+          if (!shouldApplyMutation(path, state, 'conditional')) return;
+
+          // Only mutate if there's a test condition
+          if (path.node.test) {
+            const { types: t } = require('@babel/core');
+            path.node.test = t.unaryExpression('!', t.parenthesizedExpression(path.node.test));
+            state.mutationApplied = true;
+            logMutation(state, 'for condition → !(condition)');
+          }
+        },
+
         // RETURN STATEMENTS
         ReturnStatement(path, state) {
           if (!shouldApplyMutation(path, state, 'returns')) return;
@@ -298,19 +311,89 @@ function logMutation(state, description) {
 }
 
 /**
- * Gets all possible mutations for a given line of code
+ * Gets all possible mutations for a given line of code by analyzing the AST
  */
 function getPossibleMutations(filePath, lineNumber, sourceCode) {
-  // This would analyze the AST to determine what mutations are possible
-  // For now, return a basic set
-  return [
-    'arithmetic',
-    'comparison', 
-    'logical',
-    'conditional',
-    'literals',
-    'returns'
-  ];
+  try {
+    const babel = require('@babel/core');
+    const fs = require('fs');
+
+    // Read the full file content
+    const fullFileContent = fs.readFileSync(filePath, 'utf8');
+    const lines = fullFileContent.split('\n');
+    const targetLine = lines[lineNumber - 1];
+
+    if (!targetLine) return [];
+
+    const possibleMutations = [];
+
+    // Parse the entire file to get proper AST context
+    const ast = babel.parseSync(fullFileContent, {
+      filename: filePath,
+      parserOpts: {
+        sourceType: "module",
+        allowImportExportEverywhere: true,
+        plugins: ["typescript", "jsx"],
+      },
+    });
+
+    // Traverse the AST to find nodes on the target line
+    babel.traverse(ast, {
+      enter(path) {
+        const nodeLineNumber = path.node.loc?.start.line;
+        if (nodeLineNumber !== lineNumber) return;
+
+        // Check what types of mutations are possible based on the AST nodes
+        if (path.isBinaryExpression()) {
+          const operator = path.node.operator;
+          if (['+', '-', '*', '/', '%'].includes(operator)) {
+            possibleMutations.push('arithmetic');
+          }
+          if (['==', '!=', '===', '!==', '<', '>', '<=', '>='].includes(operator)) {
+            possibleMutations.push('comparison');
+          }
+        }
+
+        if (path.isLogicalExpression()) {
+          possibleMutations.push('logical');
+        }
+
+        if (path.isUnaryExpression() && path.node.operator === '!') {
+          possibleMutations.push('logical');
+        }
+
+        if (path.isUpdateExpression()) {
+          possibleMutations.push('increments');
+        }
+
+        if (path.isAssignmentExpression() && path.node.operator !== '=') {
+          possibleMutations.push('assignment');
+        }
+
+        // Only add conditional mutations for actual conditional statements
+        if (path.isIfStatement() || path.isWhileStatement() ||
+            (path.isForStatement() && path.node.test)) {
+          possibleMutations.push('conditional');
+        }
+
+        if (path.isReturnStatement()) {
+          possibleMutations.push('returns');
+        }
+
+        if (path.isLiteral() || path.isNumericLiteral() ||
+            path.isBooleanLiteral() || path.isStringLiteral()) {
+          possibleMutations.push('literals');
+        }
+      }
+    });
+
+    // Remove duplicates
+    return [...new Set(possibleMutations)];
+
+  } catch (error) {
+    // If AST analysis fails, return empty array to skip this line
+    return [];
+  }
 }
 
 module.exports = {

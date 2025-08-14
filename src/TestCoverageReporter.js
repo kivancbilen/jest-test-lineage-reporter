@@ -212,12 +212,15 @@ class TestCoverageReporter {
       try {
         mutationTester = new MutationTester(config);
 
-        // Load lineage data from the current test run
-        const loaded = await mutationTester.loadLineageData();
-        if (!loaded) {
+        // Pass the current coverage data directly instead of loading from file
+        const lineageData = this.convertCoverageDataToLineageFormat();
+        if (!lineageData || Object.keys(lineageData).length === 0) {
           console.log('⚠️ No lineage data available for mutation testing');
           return;
         }
+
+        // Set the lineage data directly
+        mutationTester.setLineageData(lineageData);
 
         // Run mutation testing
         const results = await mutationTester.runMutationTesting();
@@ -249,7 +252,30 @@ class TestCoverageReporter {
   }
 
   tryGetPreciseTrackingData() {
-    // Try to read tracking data from file first
+    // Try to get data from global persistent data first (most reliable)
+    if (global.__LINEAGE_PERSISTENT_DATA__ && global.__LINEAGE_PERSISTENT_DATA__.length > 0) {
+      console.log('🎯 Found precise lineage tracking data from global persistent data! Replacing estimated data...');
+
+      // Clear existing coverage data and replace with precise data
+      this.coverageData = {};
+      this.processFileTrackingData(global.__LINEAGE_PERSISTENT_DATA__);
+      return true;
+    }
+
+    // Fallback to global function
+    if (global.__GET_LINEAGE_RESULTS__) {
+      const lineageResults = global.__GET_LINEAGE_RESULTS__();
+      if (Object.keys(lineageResults).length > 0) {
+        console.log('🎯 Found precise lineage tracking data from global function! Replacing estimated data...');
+
+        // Clear existing coverage data and replace with precise data
+        this.coverageData = {};
+        this.processLineageResults(lineageResults, 'precise-tracking');
+        return true;
+      }
+    }
+
+    // Last resort: try to read tracking data from file
     const fileData = this.readTrackingDataFromFile();
     if (fileData) {
       console.log('🎯 Found precise lineage tracking data from file! Replacing estimated data...');
@@ -260,21 +286,44 @@ class TestCoverageReporter {
       return true;
     }
 
-    // Fallback to global function
-    if (global.__GET_LINEAGE_RESULTS__) {
-      const lineageResults = global.__GET_LINEAGE_RESULTS__();
-      if (Object.keys(lineageResults).length > 0) {
-        console.log('🎯 Found precise lineage tracking data from global! Replacing estimated data...');
+    console.log('⚠️ No precise tracking data found, using estimated coverage');
+    return false;
+  }
 
-        // Clear existing coverage data and replace with precise data
-        this.coverageData = {};
-        this.processLineageResults(lineageResults, 'precise-tracking');
-        return true;
+  /**
+   * Convert the current coverage data to the format expected by MutationTester
+   */
+  convertCoverageDataToLineageFormat() {
+    const lineageData = {};
+
+    // Iterate through all coverage data and convert to mutation testing format
+    // The actual structure is: this.coverageData[filePath][lineNumber] = [testInfo, ...]
+    for (const [filePath, fileData] of Object.entries(this.coverageData)) {
+      if (!fileData || typeof fileData !== 'object') continue;
+
+      for (const [lineNumber, tests] of Object.entries(fileData)) {
+        if (!Array.isArray(tests) || tests.length === 0) continue;
+
+        if (!lineageData[filePath]) {
+          lineageData[filePath] = {};
+        }
+
+        lineageData[filePath][lineNumber] = tests.map(test => ({
+          testName: test.name || test.testName || 'Unknown test',
+          testType: test.testType || test.type || 'it',
+          testFile: test.testFile || test.file || 'unknown',
+          executionCount: test.executionCount || 1,
+        }));
       }
     }
 
-    console.log('⚠️ No precise tracking data found, using estimated coverage');
-    return false;
+    console.log(`🔄 Converted coverage data to lineage format: ${Object.keys(lineageData).length} files`);
+    Object.keys(lineageData).forEach(filePath => {
+      const lineCount = Object.keys(lineageData[filePath]).length;
+      console.log(`  ${filePath}: ${lineCount} lines`);
+    });
+
+    return lineageData;
   }
 
   readTrackingDataFromFile() {
@@ -284,7 +333,7 @@ class TestCoverageReporter {
         const data = JSON.parse(fs.readFileSync(filePath, 'utf8'));
         console.log(`📖 Read tracking data: ${data.tests.length} tests from file`);
 
-        // Debug logging removed for production
+
 
         return data.tests;
       } else {
@@ -304,6 +353,8 @@ class TestCoverageReporter {
 
     console.log(`🔍 Processing ${testDataArray.length} test data entries`);
 
+    let processedFiles = 0;
+    let processedLines = 0;
 
 
     testDataArray.forEach((testData, index) => {
@@ -346,8 +397,12 @@ class TestCoverageReporter {
                 filePath.includes('.test.') ||
                 filePath.includes('.spec.') ||
                 filePath.includes('node_modules')) {
+              console.log(`🔍 DEBUG: Skipping test/node_modules file: ${filePath}`);
               return;
             }
+
+            //console.log(`🔍 DEBUG: Processing coverage for ${filePath}:${lineNumber} (count: ${count})`);
+            processedLines++;
 
             // Get depth data for this line
             const depthKey = `${filePath}:${lineNumber}:depth`;
@@ -382,8 +437,8 @@ class TestCoverageReporter {
             // Add test with precise tracking information including depth, performance, and quality
             const testInfo = {
               name: testData.name || 'Unknown test',
-              file: 'precise-tracking',
-              fullPath: 'precise-tracking',
+              file: testData.testFile || 'unknown-test-file',
+              fullPath: testData.testFile || 'unknown-test-file',
               executionCount: typeof count === 'number' ? count : 1,
               duration: testData.duration || 0,
               type: 'precise', // Mark as precise tracking
@@ -440,7 +495,13 @@ class TestCoverageReporter {
       }
     });
 
-    console.log(`✅ Processed tracking data for ${Object.keys(this.coverageData).length} files`);
+    console.log(`✅ Processed tracking data for ${Object.keys(this.coverageData).length} files (${processedLines} lines processed)`);
+
+    // Debug: Show what files were processed
+    Object.keys(this.coverageData).forEach(filePath => {
+      const lineCount = Object.keys(this.coverageData[filePath]).length;
+      console.log(`  📁 ${filePath}: ${lineCount} lines`);
+    });
   }
 
   generateReport() {
@@ -450,20 +511,17 @@ class TestCoverageReporter {
     this.generateTestQualitySummary();
 
     for (const filePath in this.coverageData) {
-      console.log(`\n📄 File: ${filePath}`);
       const lineCoverage = this.coverageData[filePath];
         
       const lineNumbers = Object.keys(lineCoverage).sort((a, b) => parseInt(a) - parseInt(b));
 
       if (lineNumbers.length === 0) {
-        console.log('  No lines covered by tests in this file.');
         continue;
       }
 
       for (const line of lineNumbers) {
         const testInfos = lineCoverage[line];
         const uniqueTests = this.deduplicateTests(testInfos);
-        console.log(`  Line ${line}: Covered by ${uniqueTests.length} test(s)`);
         uniqueTests.forEach(testInfo => {
           const testName = typeof testInfo === 'string' ? testInfo : testInfo.name;
           const testFile = typeof testInfo === 'object' ? testInfo.file : 'Unknown';
@@ -556,7 +614,7 @@ class TestCoverageReporter {
             }
           }
 
-          console.log(`    - "${testName}" (${testFile}, ${executionCount} executions${depthInfo}${performanceInfo}) ${trackingType}${qualityInfo}`);
+          // console.log(`    - "${testName}" (${testFile}, ${executionCount} executions${depthInfo}${performanceInfo}) ${trackingType}${qualityInfo}`);
         });
       }
     }
@@ -2900,9 +2958,10 @@ class TestCoverageReporter {
             }
 
             function generateMutationsDashboard() {
-                let mutationData = ${JSON.stringify(this.mutationResults || {})};
+                // Get mutation data from the global variable set by the mutation testing
+                let mutationData = window.mutationTestingResults || ${JSON.stringify(this.mutationResults || {})};
 
-                if (!mutationData || mutationData.totalMutations === undefined) {
+                if (!mutationData || mutationData.totalMutations === undefined || mutationData.totalMutations === 0) {
                     document.getElementById('mutations-dashboard').innerHTML = \`
                         <div class="no-data">
                             <h3>🧬 No Mutation Testing Data Available</h3>
@@ -3076,6 +3135,11 @@ class TestCoverageReporter {
                     details.style.display = details.style.display === 'none' ? 'table-row' : 'none';
                 }
             }
+        </script>
+
+        <!-- Inject mutation testing results -->
+        <script>
+            window.mutationTestingResults = ${JSON.stringify(this.mutationResults || {})};
         </script>
     </body>
     </html>`;

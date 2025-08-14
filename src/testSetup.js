@@ -273,14 +273,17 @@ function createTestWrapper(originalFn, testType) {
 
         global.__TEST_LINEAGE_TRACKER__.testCoverage.set(testId, testData);
 
-        // Also store in a more persistent way for the reporter
-        if (!global.__LINEAGE_PERSISTENT_DATA__) {
-          global.__LINEAGE_PERSISTENT_DATA__ = [];
-        }
-        global.__LINEAGE_PERSISTENT_DATA__.push(testData);
+        // Skip storing persistent data and writing files during mutation testing
+        if (process.env.JEST_LINEAGE_MUTATION !== 'true') {
+          // Also store in a more persistent way for the reporter
+          if (!global.__LINEAGE_PERSISTENT_DATA__) {
+            global.__LINEAGE_PERSISTENT_DATA__ = [];
+          }
+          global.__LINEAGE_PERSISTENT_DATA__.push(testData);
 
-        // Write to file for reporter to read
-        writeTrackingDataToFile();
+          // Write to file for reporter to read
+          writeTrackingDataToFile();
+        }
 
         return result;
       } catch (error) {
@@ -629,15 +632,22 @@ function calculateCallDepth() {
 
 // Method to write tracking data to file
 function writeTrackingDataToFile() {
+  // Skip writing during mutation testing to avoid creating reports
+  if (process.env.JEST_LINEAGE_MUTATION === 'true') {
+    return;
+  }
+
   const fs = require('fs');
   const path = require('path');
 
   try {
     const filePath = path.join(process.cwd(), '.jest-lineage-data.json');
 
-    // Read existing data if file exists
+    // Check if we should merge with existing data (default: false - recreate from scratch)
+    const shouldMerge = process.env.JEST_LINEAGE_MERGE === 'true';
+
     let existingData = { timestamp: Date.now(), tests: [] };
-    if (fs.existsSync(filePath)) {
+    if (shouldMerge && fs.existsSync(filePath)) {
       try {
         existingData = JSON.parse(fs.readFileSync(filePath, 'utf8'));
       } catch (e) {
@@ -648,23 +658,47 @@ function writeTrackingDataToFile() {
 
     const tests = global.__LINEAGE_PERSISTENT_DATA__ || [];
 
+    // Don't write if we have no tests or if all tests have empty coverage
+    if (tests.length === 0) {
+      return;
+    }
+
+    // Check if any test has actual coverage data
+    const hasAnyCoverage = tests.some(test => test.coverage && test.coverage.size > 0);
+    if (!hasAnyCoverage) {
+      return;
+    }
+
     // Convert Map objects to plain objects for JSON serialization
     const serializedTests = tests.map(testData => ({
       name: testData.name,
       type: testData.type,
       testFile: testData.testFile,
       duration: testData.duration,
-      coverage: Object.fromEntries(testData.coverage) // Convert Map to Object (includes depth data)
+      coverage: testData.coverage instanceof Map ? Object.fromEntries(testData.coverage) : testData.coverage
     }));
 
-    // Merge with existing data (avoid duplicates by test name)
-    const existingTestNames = new Set(existingData.tests.map(t => t.name));
-    const newTests = serializedTests.filter(t => !existingTestNames.has(t.name));
+    let dataToWrite;
+    if (shouldMerge) {
+      // Merge with existing data (replace tests with same name to get latest coverage data)
+      const existingTestsByName = new Map(existingData.tests.map(t => [t.name, t]));
 
-    const dataToWrite = {
-      timestamp: Date.now(),
-      tests: [...existingData.tests, ...newTests]
-    };
+      // Add/replace tests with new data
+      serializedTests.forEach(newTest => {
+        existingTestsByName.set(newTest.name, newTest);
+      });
+
+      dataToWrite = {
+        timestamp: Date.now(),
+        tests: Array.from(existingTestsByName.values())
+      };
+    } else {
+      // Recreate from scratch (default behavior)
+      dataToWrite = {
+        timestamp: Date.now(),
+        tests: serializedTests
+      };
+    }
 
     fs.writeFileSync(filePath, JSON.stringify(dataToWrite, null, 2));
 
@@ -834,6 +868,11 @@ global.__TRACK_LINE_EXECUTION__ = function(filePath, lineNumber, nodeType) {
 
 // Export results for the reporter
 global.__GET_LINEAGE_RESULTS__ = function() {
+  // Return empty results during mutation testing to prevent report generation
+  if (process.env.JEST_LINEAGE_MUTATION === 'true') {
+    return {};
+  }
+
   const results = {};
 
   // Use persistent data if available, fallback to test coverage map
