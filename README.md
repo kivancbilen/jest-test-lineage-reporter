@@ -1,12 +1,15 @@
 # Jest Test Lineage Reporter
 
-A comprehensive test analytics platform that provides line-by-line test coverage, performance metrics, memory analysis, and test quality scoring.
+A comprehensive test analytics platform that provides line-by-line test coverage, performance metrics, memory analysis, test quality scoring, and mutation testing.
 
 ## Features
 
 - **Line-by-line coverage mapping**: See exactly which tests execute each line of your source code
 - **Visual HTML reports**: Beautiful, interactive HTML reports for easy visualization
 - **Test redundancy identification**: Identify multiple tests covering the same lines
+- **Mutation testing**: Automated test quality assessment through code mutations
+- **Performance monitoring**: CPU cycles, memory leaks, and GC pressure detection
+- **Test quality scoring**: Comprehensive test quality metrics and improvement recommendations
 - **Easy integration**: Simple Jest reporter that works alongside existing reporters
 - **TypeScript support**: Built with TypeScript support out of the box
 - **Statistics and insights**: File-level and overall statistics about test coverage patterns
@@ -152,9 +155,10 @@ start test-lineage-report.html
 
 The reporter generates:
 1. **📋 Console Report**: Detailed analytics in your terminal
-2. **🌐 Interactive HTML Dashboard**: Beautiful visual report with 4 views
+2. **🌐 Interactive HTML Dashboard**: Beautiful visual report with 5 views
 3. **📈 Performance Insights**: Memory leaks, GC pressure, slow tests
 4. **🧪 Quality Metrics**: Test quality scores and improvement recommendations
+5. **🧬 Mutation Testing**: Automated test effectiveness validation
 
 ## 🔧 How It Works
 
@@ -264,6 +268,7 @@ function deepFunction() { // Depth 3 (D3)
 - **📊 Lines Analysis**: Sortable table with all metrics
 - **🔥 Performance Analytics**: CPU, memory, and performance hotspots
 - **🧪 Test Quality**: Quality scores, test smells, and recommendations
+- **🧬 Mutation Testing**: Mutation scores, survived/killed mutations, and test effectiveness
 
 **Real-time Alerts:**
 ```bash
@@ -272,6 +277,130 @@ depths 1,4, 571 cycles, 0.2μs, +5.4MB 🚨LEAK 🐌SLOW) ✅ PRECISE
 ```
 
 This multi-layered approach provides **unprecedented visibility** into your test suite's behavior, performance, and quality!
+
+## 🧬 Mutation Testing
+
+Jest Test Lineage Reporter includes **automated mutation testing** to validate the effectiveness of your test suite by introducing small code changes (mutations) and checking if your tests catch them.
+
+### **What is Mutation Testing?**
+
+Mutation testing works by:
+1. **🔄 Creating mutations**: Small changes to your source code (e.g., changing `+` to `-`, `>` to `<`)
+2. **🧪 Running tests**: Execute your test suite against each mutation
+3. **📊 Measuring effectiveness**: Count how many mutations your tests catch (kill) vs miss (survive)
+
+### **How It Works**
+
+```javascript
+// Original code:
+function add(a, b) {
+  return a + b;  // Line 2
+}
+
+// Mutation 1: Arithmetic operator
+function add(a, b) {
+  return a - b;  // Changed + to -
+}
+
+// Mutation 2: Comparison operator
+function add(a, b) {
+  return a > b;  // Changed + to >
+}
+```
+
+**Smart Test Selection**: Only runs tests that actually cover the mutated line, making mutation testing fast and efficient.
+
+### **Mutation Types Supported**
+
+- **🔢 Arithmetic**: `+`, `-`, `*`, `/`, `%` operators
+- **🔍 Comparison**: `>`, `<`, `>=`, `<=`, `==`, `!=` operators
+- **🧠 Logical**: `&&`, `||`, `!` operators
+- **🔄 Conditional**: `if`, `while`, `for` conditions
+- **📝 Literals**: `true`/`false`, numbers, strings
+- **↩️ Returns**: Return values and statements
+- **➕ Increments**: `++`, `--` operators
+- **📋 Assignment**: `+=`, `-=`, `*=`, `/=` operators
+
+### **Mutation Testing Results**
+
+The HTML report includes a dedicated **Mutations View** showing:
+
+```
+🧬 Mutation Testing Results
+┌─────────────────────────────────────────────────────────────┐
+│ 📊 Overall Score: 85% (17/20 mutations killed)             │
+│ ✅ Killed: 17    🔴 Survived: 3    ❌ Errors: 0           │
+└─────────────────────────────────────────────────────────────┘
+
+📁 src/calculator.ts
+├── Line 5: add function
+│   ✅ Killed: + → - (caught by "should add numbers")
+│   ✅ Killed: + → * (caught by "should add numbers")
+│   🔴 Survived: + → 0 (no test caught this!)
+│
+└── Line 12: multiply function
+    ✅ Killed: * → + (caught by "should multiply")
+    🔴 Survived: * → / (tests missed this change)
+```
+
+### **Interpreting Results**
+
+- **🎯 High Score (80%+)**: Excellent test coverage and quality
+- **⚠️ Medium Score (60-80%)**: Good coverage, some gaps to address
+- **🚨 Low Score (<60%)**: Significant testing gaps, needs improvement
+
+**Survived Mutations** indicate:
+- Missing test cases for edge conditions
+- Weak assertions that don't verify specific behavior
+- Logic paths not covered by tests
+
+### **Configuration**
+
+Mutation testing runs automatically after regular tests complete. Configure it in your Jest config:
+
+```javascript
+// jest.config.js
+module.exports = {
+  reporters: [
+    'default',
+    ['jest-test-lineage-reporter', {
+      // Mutation testing settings
+      enableMutationTesting: true,        // Enable/disable mutation testing
+      mutationTimeout: 10000,             // Max time per mutation (ms)
+      mutationThreshold: 0.8,             // Minimum score to pass (80%)
+      maxMutationsPerFile: 50,            // Limit mutations per file
+
+      // Mutation types to enable
+      enabledMutations: [
+        'arithmetic',     // +, -, *, /, %
+        'comparison',     // >, <, >=, <=, ==, !=
+        'logical',        // &&, ||, !
+        'conditional',    // if/while/for conditions
+        'literals',       // true/false, numbers
+        'returns',        // return statements
+        'increments',     // ++, --
+        'assignment'      // +=, -=, *=, /=
+      ]
+    }]
+  ]
+};
+```
+
+### **Performance Optimization**
+
+Mutation testing is optimized for speed:
+- **🎯 Smart targeting**: Only tests covering mutated lines are executed
+- **⚡ Parallel execution**: Multiple mutations tested simultaneously
+- **🚫 Early termination**: Stops when first test fails (mutation killed)
+- **📊 Incremental**: Caches results for unchanged code
+
+### **Best Practices**
+
+1. **Start small**: Enable mutation testing on critical files first
+2. **Set realistic thresholds**: Begin with 70% score, improve over time
+3. **Focus on survivors**: Prioritize fixing survived mutations
+4. **Use with coverage**: Combine with line coverage for complete picture
+5. **CI integration**: Run mutation testing in dedicated CI jobs
 
 ## Example Output
 
@@ -295,17 +424,50 @@ This multi-layered approach provides **unprecedented visibility** into your test
 📄 Generating HTML coverage report...
 ✅ HTML report generated: /path/to/your/project/test-lineage-report.html
 🌐 Open the file in your browser to view the visual coverage report
+
+🧬 Running mutation testing...
+📊 Mutation testing completed: 85% score (17/20 mutations killed)
+🔴 3 mutations survived - check the Mutations view in the HTML report
 ```
 
 ### HTML Report
-The HTML report provides a beautiful, interactive code tree visualization with:
+The HTML report provides a beautiful, interactive dashboard with 5 specialized views:
+
+#### **📁 Files View**
 - **Complete source code display** with syntax highlighting and line numbers
 - **Visual coverage indicators** showing covered (green) vs uncovered (red) lines
 - **Interactive line-by-line exploration** - click coverage indicators to expand/collapse test details
 - **Test grouping by file** showing which test files cover each line
+
+#### **📊 Lines Analysis View**
+- **Sortable data table** with 11+ sorting options (executions, tests, depth, performance, quality)
+- **Quality metrics** including test smells with hover tooltips showing specific smell types
+- **Performance data** including CPU cycles, memory usage, and execution times
+- **Call depth information** showing function call chain depths
+
+#### **🔥 Performance Analytics View**
+- **Memory leak detection** with detailed allocation tracking
+- **GC pressure monitoring** showing garbage collection stress
+- **CPU performance metrics** with cycle counts and timing data
+- **Performance alerts** highlighting slow tests and memory issues
+
+#### **🧪 Test Quality View**
+- **Quality scoring dashboard** with maintainability and reliability metrics
+- **Test smell analysis** showing specific issues like "Weak Assertions", "Long Test", etc.
+- **Improvement recommendations** with actionable suggestions
+- **Quality distribution charts** showing high/good/fair/poor quality breakdown
+
+#### **🧬 Mutation Testing View**
+- **Mutation score dashboard** showing overall test effectiveness
+- **Detailed mutation results** with killed/survived/error breakdowns
+- **File-by-file analysis** showing which mutations were caught by tests
+- **Survival analysis** highlighting gaps in test coverage
+
+**Additional Features:**
 - **Hover effects and tooltips** for enhanced user experience
 - **File-level statistics** showing total lines, covered lines, and unique tests
 - **Modern, responsive design** that works on all devices
+- **Interactive controls** for sorting, filtering, and exploring data
 
 ## ⚙️ Configuration Options
 
@@ -360,6 +522,13 @@ module.exports = {
       enableMemoryTracking: true, // Memory leak detection
       enableCallDepthTracking: true, // Function call depth analysis
       enableInteractiveFeatures: true, // Interactive HTML dashboard
+      enableMutationTesting: true, // Automated mutation testing
+
+      // Mutation testing settings
+      mutationTimeout: 10000, // Max time per mutation (ms)
+      mutationThreshold: 0.8, // Minimum score to pass (80%)
+      maxMutationsPerFile: 50, // Limit mutations per file
+      enabledMutations: ['arithmetic', 'comparison', 'logical'], // Mutation types
 
       // File filtering
       includePatterns: ['**/*.js', '**/*.ts', '**/*.jsx', '**/*.tsx'],
@@ -385,6 +554,7 @@ export JEST_LINEAGE_ENABLED=true           # Master switch (default: true)
 export JEST_LINEAGE_TRACKING=true          # Line-by-line tracking (default: true)
 export JEST_LINEAGE_PERFORMANCE=true       # Performance monitoring (default: true)
 export JEST_LINEAGE_QUALITY=true           # Quality analysis (default: true)
+export JEST_LINEAGE_MUTATION=true          # Mutation testing (default: false)
 
 # 📁 OUTPUT SETTINGS
 export JEST_LINEAGE_OUTPUT_FILE=custom-report.html
@@ -394,6 +564,11 @@ export JEST_LINEAGE_DEBUG=true
 export JEST_LINEAGE_MEMORY_THRESHOLD=100000  # 100KB
 export JEST_LINEAGE_GC_THRESHOLD=10
 export JEST_LINEAGE_QUALITY_THRESHOLD=70
+
+# 🧬 MUTATION TESTING SETTINGS
+export JEST_LINEAGE_MUTATION_TIMEOUT=10000   # 10 seconds per mutation
+export JEST_LINEAGE_MUTATION_THRESHOLD=80    # 80% minimum score
+export JEST_LINEAGE_MAX_MUTATIONS=50         # Max mutations per file
 ```
 
 ## 🎛️ **Enable/Disable Controls**
@@ -412,6 +587,7 @@ npm test
 # 🎯 SELECTIVE DISABLE (keep basic tracking, disable heavy features)
 export JEST_LINEAGE_PERFORMANCE=false  # Disable CPU/memory monitoring
 export JEST_LINEAGE_QUALITY=false      # Disable test quality analysis
+export JEST_LINEAGE_MUTATION=false     # Disable mutation testing
 npm test
 ```
 
@@ -504,6 +680,9 @@ npm run test:performance
 
 # 🧪 Quality focus (no performance monitoring)
 npm run test:quality
+
+# 🧬 Mutation testing focus
+npm run test:mutation
 
 # 👀 Watch mode with lineage
 npm run test:watch
