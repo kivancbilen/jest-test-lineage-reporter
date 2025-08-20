@@ -46,6 +46,27 @@ const DEFAULT_CONFIG = {
   enablePerformanceDashboard: true,
   enableQualityDashboard: true,
   maxLinesInReport: 10000, // Maximum number of lines to include in HTML report
+
+  // Mutation testing settings
+  enableMutationTesting: false, // Enable mutation testing mode
+  mutationOperators: {
+    arithmetic: true,     // +, -, *, /, %
+    comparison: true,     // ==, !=, <, >, <=, >=
+    logical: true,        // &&, ||, !
+    conditional: true,    // if conditions, ternary operators
+    assignment: true,     // =, +=, -=, etc.
+    literals: true,       // numbers, booleans, strings
+    returns: true,        // return statements
+    increments: true      // ++, --
+  },
+  mutationThreshold: 80,  // Minimum mutation score (% of mutations killed)
+  mutationTimeout: 5000,  // Timeout per mutation test in ms
+  maxMutationsPerLine: 3, // Maximum mutations to generate per line
+  skipEquivalentMutants: true, // Skip mutations that don't change behavior
+
+  // Debug options
+  debugMutations: false,  // Create mutation files for debugging instead of overwriting originals
+  debugMutationDir: './mutations-debug', // Directory to store debug mutation files
   
   // File filtering
   includePatterns: [
@@ -118,6 +139,7 @@ function getConfigFromEnv() {
     enableLineageTracking: process.env.JEST_LINEAGE_TRACKING !== 'false',
     enablePerformanceTracking: process.env.JEST_LINEAGE_PERFORMANCE !== 'false',
     enableQualityAnalysis: process.env.JEST_LINEAGE_QUALITY !== 'false',
+    enableMutationTesting: process.env.JEST_LINEAGE_MUTATION ? process.env.JEST_LINEAGE_MUTATION === 'true' : undefined,
 
     // Output settings
     outputFile: process.env.JEST_LINEAGE_OUTPUT_FILE,
@@ -129,7 +151,17 @@ function getConfigFromEnv() {
     gcPressureThreshold: process.env.JEST_LINEAGE_GC_THRESHOLD ?
       parseInt(process.env.JEST_LINEAGE_GC_THRESHOLD) : undefined,
     qualityThreshold: process.env.JEST_LINEAGE_QUALITY_THRESHOLD ?
-      parseInt(process.env.JEST_LINEAGE_QUALITY_THRESHOLD) : undefined
+      parseInt(process.env.JEST_LINEAGE_QUALITY_THRESHOLD) : undefined,
+
+    // Mutation testing settings
+    debugMutations: process.env.JEST_LINEAGE_DEBUG_MUTATIONS ? process.env.JEST_LINEAGE_DEBUG_MUTATIONS === 'true' : undefined,
+    debugMutationDir: process.env.JEST_LINEAGE_DEBUG_MUTATION_DIR,
+
+    // Mutation testing thresholds
+    mutationThreshold: process.env.JEST_LINEAGE_MUTATION_THRESHOLD ?
+      parseInt(process.env.JEST_LINEAGE_MUTATION_THRESHOLD) : undefined,
+    mutationTimeout: process.env.JEST_LINEAGE_MUTATION_TIMEOUT ?
+      parseInt(process.env.JEST_LINEAGE_MUTATION_TIMEOUT) : undefined
   };
 }
 
@@ -140,7 +172,16 @@ function getConfigFromEnv() {
  */
 function loadConfig(userConfig = {}) {
   const envConfig = getConfigFromEnv();
-  const mergedConfig = { ...userConfig, ...envConfig };
+
+  // Only merge environment config values that are actually set (not undefined)
+  const filteredEnvConfig = {};
+  Object.keys(envConfig).forEach(key => {
+    if (envConfig[key] !== undefined) {
+      filteredEnvConfig[key] = envConfig[key];
+    }
+  });
+
+  const mergedConfig = { ...userConfig, ...filteredEnvConfig };
   return validateAndMergeConfig(mergedConfig);
 }
 

@@ -164,6 +164,7 @@ global.__TEST_LINEAGE_TRACKER__ = {
   isTracking: isEnabled && isTrackingEnabled,
   isPerformanceTracking: isEnabled && isPerformanceEnabled,
   isQualityTracking: isEnabled && isQualityEnabled,
+  currentTestFile: null, // Track current test file
   config: {
     enabled: isEnabled,
     lineageTracking: isTrackingEnabled,
@@ -186,10 +187,49 @@ function createTestWrapper(originalFn, testType) {
 
     // Wrap the test function with tracking
     const wrappedTestFn = async function(...args) {
+      // Get the current test file path from Jest's context
+      let testFilePath = 'unknown';
+      try {
+        // Method 1: Try expect.getState() - this is the most reliable method
+        const expectState = expect.getState();
+        if (expectState && expectState.testPath) {
+          testFilePath = expectState.testPath;
+        }
+        // Method 2: Try global Jest context
+        else if (global.jasmine && global.jasmine.testPath) {
+          testFilePath = global.jasmine.testPath;
+        }
+        // Method 3: Use stack trace to find test file as fallback
+        else {
+          const stack = new Error().stack;
+
+          // Look for test file patterns in the stack trace
+          const testFilePatterns = [
+            /at.*\/([^\/]+\.test\.[jt]s):/,
+            /at.*\/([^\/]+\.spec\.[jt]s):/,
+            /at.*\/(src\/__tests__\/[^:]+\.test\.[jt]s):/,
+            /at.*\/(src\/__tests__\/[^:]+\.spec\.[jt]s):/,
+            /at.*\/(__tests__\/[^:]+\.test\.[jt]s):/,
+            /at.*\/(__tests__\/[^:]+\.spec\.[jt]s):/
+          ];
+
+          for (const pattern of testFilePatterns) {
+            const match = stack.match(pattern);
+            if (match) {
+              testFilePath = match[1];
+              break;
+            }
+          }
+        }
+      } catch (e) {
+        testFilePath = 'unknown';
+      }
+
       // Start tracking for this specific test
       global.__TEST_LINEAGE_TRACKER__.currentTest = {
         name: testName,
         type: testType,
+        testFile: testFilePath,
         startTime: Date.now(),
         coverage: new Map(),
         qualityMetrics: {
@@ -226,20 +266,25 @@ function createTestWrapper(originalFn, testType) {
         const testData = {
           name: testName,
           type: testType,
+          testFile: global.__TEST_LINEAGE_TRACKER__.currentTest.testFile,
           duration: Date.now() - global.__TEST_LINEAGE_TRACKER__.currentTest.startTime,
-          coverage: new Map(global.__TEST_LINEAGE_TRACKER__.currentTest.coverage)
+          coverage: new Map(global.__TEST_LINEAGE_TRACKER__.currentTest.coverage),
+          qualityMetrics: global.__TEST_LINEAGE_TRACKER__.currentTest.qualityMetrics
         };
 
         global.__TEST_LINEAGE_TRACKER__.testCoverage.set(testId, testData);
 
-        // Also store in a more persistent way for the reporter
-        if (!global.__LINEAGE_PERSISTENT_DATA__) {
-          global.__LINEAGE_PERSISTENT_DATA__ = [];
-        }
-        global.__LINEAGE_PERSISTENT_DATA__.push(testData);
+        // Skip storing persistent data and writing files during mutation testing
+        if (process.env.JEST_LINEAGE_MUTATION !== 'true') {
+          // Also store in a more persistent way for the reporter
+          if (!global.__LINEAGE_PERSISTENT_DATA__) {
+            global.__LINEAGE_PERSISTENT_DATA__ = [];
+          }
+          global.__LINEAGE_PERSISTENT_DATA__.push(testData);
 
-        // Write to file for reporter to read
-        writeTrackingDataToFile();
+          // Write to file for reporter to read
+          writeTrackingDataToFile();
+        }
 
         return result;
       } catch (error) {
@@ -248,8 +293,10 @@ function createTestWrapper(originalFn, testType) {
         global.__TEST_LINEAGE_TRACKER__.testCoverage.set(testId, {
           name: testName,
           type: testType,
+          testFile: global.__TEST_LINEAGE_TRACKER__.currentTest.testFile,
           duration: Date.now() - global.__TEST_LINEAGE_TRACKER__.currentTest.startTime,
           coverage: new Map(global.__TEST_LINEAGE_TRACKER__.currentTest.coverage),
+          qualityMetrics: global.__TEST_LINEAGE_TRACKER__.currentTest.qualityMetrics,
           failed: true
         });
         throw error;
@@ -587,15 +634,22 @@ function calculateCallDepth() {
 
 // Method to write tracking data to file
 function writeTrackingDataToFile() {
+  // Skip writing during mutation testing to avoid creating reports
+  if (process.env.JEST_LINEAGE_MUTATION === 'true') {
+    return;
+  }
+
   const fs = require('fs');
   const path = require('path');
 
   try {
     const filePath = path.join(process.cwd(), '.jest-lineage-data.json');
 
-    // Read existing data if file exists
+    // Check if we should merge with existing data (default: false - recreate from scratch)
+    const shouldMerge = process.env.JEST_LINEAGE_MERGE === 'true';
+
     let existingData = { timestamp: Date.now(), tests: [] };
-    if (fs.existsSync(filePath)) {
+    if (shouldMerge && fs.existsSync(filePath)) {
       try {
         existingData = JSON.parse(fs.readFileSync(filePath, 'utf8'));
       } catch (e) {
@@ -606,22 +660,61 @@ function writeTrackingDataToFile() {
 
     const tests = global.__LINEAGE_PERSISTENT_DATA__ || [];
 
+    // Don't write if we have no tests or if all tests have empty coverage
+    if (tests.length === 0) {
+      return;
+    }
+
+    // Check if any test has actual coverage data
+    const hasAnyCoverage = tests.some(test => test.coverage && test.coverage.size > 0);
+    if (!hasAnyCoverage) {
+      return;
+    }
+
     // Convert Map objects to plain objects for JSON serialization
     const serializedTests = tests.map(testData => ({
       name: testData.name,
       type: testData.type,
+      testFile: testData.testFile,
       duration: testData.duration,
-      coverage: Object.fromEntries(testData.coverage) // Convert Map to Object (includes depth data)
+      coverage: testData.coverage instanceof Map ? Object.fromEntries(testData.coverage) : testData.coverage,
+      qualityMetrics: testData.qualityMetrics || {
+        assertions: 0,
+        asyncOperations: 0,
+        mockUsage: 0,
+        errorHandling: 0,
+        edgeCases: 0,
+        complexity: 0,
+        maintainability: 50,
+        reliability: 50,
+        testSmells: [],
+        codePatterns: [],
+        isolationScore: 100,
+        testLength: 0
+      }
     }));
 
-    // Merge with existing data (avoid duplicates by test name)
-    const existingTestNames = new Set(existingData.tests.map(t => t.name));
-    const newTests = serializedTests.filter(t => !existingTestNames.has(t.name));
+    let dataToWrite;
+    if (shouldMerge) {
+      // Merge with existing data (replace tests with same name to get latest coverage data)
+      const existingTestsByName = new Map(existingData.tests.map(t => [t.name, t]));
 
-    const dataToWrite = {
-      timestamp: Date.now(),
-      tests: [...existingData.tests, ...newTests]
-    };
+      // Add/replace tests with new data
+      serializedTests.forEach(newTest => {
+        existingTestsByName.set(newTest.name, newTest);
+      });
+
+      dataToWrite = {
+        timestamp: Date.now(),
+        tests: Array.from(existingTestsByName.values())
+      };
+    } else {
+      // Recreate from scratch (default behavior)
+      dataToWrite = {
+        timestamp: Date.now(),
+        tests: serializedTests
+      };
+    }
 
     fs.writeFileSync(filePath, JSON.stringify(dataToWrite, null, 2));
 
@@ -654,6 +747,11 @@ if (originalTest) {
 
 // Function for line execution tracking with call depth and performance analysis
 global.__TRACK_LINE_EXECUTION__ = function(filePath, lineNumber, nodeType) {
+  // Skip tracking during mutation testing to avoid conflicts
+  if (process.env.JEST_LINEAGE_MUTATION === 'true') {
+    return;
+  }
+
   if (global.__TEST_LINEAGE_TRACKER__.isTracking &&
       global.__TEST_LINEAGE_TRACKER__.currentTest) {
 
@@ -786,6 +884,11 @@ global.__TRACK_LINE_EXECUTION__ = function(filePath, lineNumber, nodeType) {
 
 // Export results for the reporter
 global.__GET_LINEAGE_RESULTS__ = function() {
+  // Return empty results during mutation testing to prevent report generation
+  if (process.env.JEST_LINEAGE_MUTATION === 'true') {
+    return {};
+  }
+
   const results = {};
 
   // Use persistent data if available, fallback to test coverage map

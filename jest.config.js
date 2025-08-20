@@ -1,11 +1,23 @@
+// Check if we're running during mutation testing to avoid infinite recursion
+const isMutationTesting = process.env.JEST_LINEAGE_MUTATION_TESTING === 'false';
+
 module.exports = {
   // Setup file to enable per-test tracking
   setupFilesAfterEnv: ['<rootDir>/src/testSetup.js'],
 
   // Set the reporter to our custom class
   reporters: [
-    'default', // The standard Jest reporter
-    './src/TestCoverageReporter.js' // Our custom reporter
+    'default',
+    [
+      './src/TestCoverageReporter.js',
+      {
+        enableMutationTesting: !isMutationTesting, // Disable during mutation testing
+        enableDebugLogging: true,
+        debugMutations: false,                    // Enable debug mode
+        debugMutationDir: './mutations-debug',  // Directory for debug files
+        // ... other options
+      }
+    ]
   ],
 
   // Enable coverage to generate the data we need
