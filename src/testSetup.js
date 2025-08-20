@@ -268,7 +268,8 @@ function createTestWrapper(originalFn, testType) {
           type: testType,
           testFile: global.__TEST_LINEAGE_TRACKER__.currentTest.testFile,
           duration: Date.now() - global.__TEST_LINEAGE_TRACKER__.currentTest.startTime,
-          coverage: new Map(global.__TEST_LINEAGE_TRACKER__.currentTest.coverage)
+          coverage: new Map(global.__TEST_LINEAGE_TRACKER__.currentTest.coverage),
+          qualityMetrics: global.__TEST_LINEAGE_TRACKER__.currentTest.qualityMetrics
         };
 
         global.__TEST_LINEAGE_TRACKER__.testCoverage.set(testId, testData);
@@ -295,6 +296,7 @@ function createTestWrapper(originalFn, testType) {
           testFile: global.__TEST_LINEAGE_TRACKER__.currentTest.testFile,
           duration: Date.now() - global.__TEST_LINEAGE_TRACKER__.currentTest.startTime,
           coverage: new Map(global.__TEST_LINEAGE_TRACKER__.currentTest.coverage),
+          qualityMetrics: global.__TEST_LINEAGE_TRACKER__.currentTest.qualityMetrics,
           failed: true
         });
         throw error;
@@ -675,7 +677,21 @@ function writeTrackingDataToFile() {
       type: testData.type,
       testFile: testData.testFile,
       duration: testData.duration,
-      coverage: testData.coverage instanceof Map ? Object.fromEntries(testData.coverage) : testData.coverage
+      coverage: testData.coverage instanceof Map ? Object.fromEntries(testData.coverage) : testData.coverage,
+      qualityMetrics: testData.qualityMetrics || {
+        assertions: 0,
+        asyncOperations: 0,
+        mockUsage: 0,
+        errorHandling: 0,
+        edgeCases: 0,
+        complexity: 0,
+        maintainability: 50,
+        reliability: 50,
+        testSmells: [],
+        codePatterns: [],
+        isolationScore: 100,
+        testLength: 0
+      }
     }));
 
     let dataToWrite;

@@ -1,51 +1,154 @@
 {
-  "timestamp": 1755161668583,
+  "timestamp": 1755679500000,
   "tests": [
     {
-      "name": "should call directFunction directly (depth 1)",
+      "name": "should test basic functionality with good quality",
       "type": "test",
-      "testFile": "/Users/kivancbilen/kivanc/jest-test-lineage-reporter/src/__tests__/depth-example.test.ts",
-      "duration": 2,
+      "testFile": "/Users/kivancbilen/kivanc/jest-test-lineage-reporter/src/__tests__/quality-example.test.ts",
+      "duration": 150,
       "coverage": {
-        "/Users/kivancbilen/kivanc/jest-test-lineage-reporter/src/depth-example.ts:4": 1,
-        "/Users/kivancbilen/kivanc/jest-test-lineage-reporter/src/depth-example.ts:4:depth": {
+        "/Users/kivancbilen/kivanc/jest-test-lineage-reporter/src/quality-example.ts:5": 1,
+        "/Users/kivancbilen/kivanc/jest-test-lineage-reporter/src/quality-example.ts:5:depth": {
           "1": 1
         },
-        "/Users/kivancbilen/kivanc/jest-test-lineage-reporter/src/depth-example.ts:4:performance": {
+        "/Users/kivancbilen/kivanc/jest-test-lineage-reporter/src/quality-example.ts:5:performance": {
           "totalExecutions": 1,
-          "totalCpuTime": 0.2759999999999536,
-          "totalWallTime": 0.28474998474121094,
-          "totalMemoryDelta": 21656,
-          "minExecutionTime": 0.28474998474121094,
-          "maxExecutionTime": 0.28474998474121094,
-          "executionTimes": [
-            0.28474998474121094
-          ],
-          "cpuCycles": [
-            662
-          ],
-          "memorySnapshots": [
-            {
-              "timestamp": 1755161668582,
-              "heapUsed": 59722784,
-              "delta": 21656
-            }
-          ],
+          "totalCpuTime": 0.5,
+          "totalWallTime": 0.6,
+          "totalMemoryDelta": 1024,
+          "minExecutionTime": 0.6,
+          "maxExecutionTime": 0.6,
+          "executionTimes": [0.6],
+          "cpuCycles": [1200],
           "performanceVariance": 0,
           "performanceStdDev": 0,
           "performanceP95": 0,
           "performanceP99": 0,
           "slowExecutions": 0,
-          "fastExecutions": 0,
+          "fastExecutions": 1,
           "memoryLeaks": 0,
           "gcPressure": 0
         },
-        "/Users/kivancbilen/kivanc/jest-test-lineage-reporter/src/depth-example.ts:4:meta": {
+        "/Users/kivancbilen/kivanc/jest-test-lineage-reporter/src/quality-example.ts:5:meta": {
           "nodeType": "return-statement",
-          "firstExecution": 1755161668582,
+          "firstExecution": 1755679500000,
           "minDepth": 1,
           "maxDepth": 1
         }
+      },
+      "qualityMetrics": {
+        "assertions": 5,
+        "asyncOperations": 0,
+        "mockUsage": 1,
+        "errorHandling": 2,
+        "edgeCases": 3,
+        "complexity": 2,
+        "maintainability": 85,
+        "reliability": 90,
+        "testSmells": [],
+        "codePatterns": ["expect", "toBe", "toThrow"],
+        "isolationScore": 95,
+        "testLength": 12
+      }
+    },
+    {
+      "name": "should test with poor quality and smells",
+      "type": "test", 
+      "testFile": "/Users/kivancbilen/kivanc/jest-test-lineage-reporter/src/__tests__/weak-test-example.test.ts",
+      "duration": 50,
+      "coverage": {
+        "/Users/kivancbilen/kivanc/jest-test-lineage-reporter/src/weak-test-example.ts:3": 1,
+        "/Users/kivancbilen/kivanc/jest-test-lineage-reporter/src/weak-test-example.ts:3:depth": {
+          "1": 1
+        },
+        "/Users/kivancbilen/kivanc/jest-test-lineage-reporter/src/weak-test-example.ts:3:performance": {
+          "totalExecutions": 1,
+          "totalCpuTime": 0.1,
+          "totalWallTime": 0.1,
+          "totalMemoryDelta": 512,
+          "minExecutionTime": 0.1,
+          "maxExecutionTime": 0.1,
+          "executionTimes": [0.1],
+          "cpuCycles": [240],
+          "performanceVariance": 0,
+          "performanceStdDev": 0,
+          "performanceP95": 0,
+          "performanceP99": 0,
+          "slowExecutions": 0,
+          "fastExecutions": 1,
+          "memoryLeaks": 0,
+          "gcPressure": 0
+        },
+        "/Users/kivancbilen/kivanc/jest-test-lineage-reporter/src/weak-test-example.ts:3:meta": {
+          "nodeType": "return-statement",
+          "firstExecution": 1755679500100,
+          "minDepth": 1,
+          "maxDepth": 1
+        }
+      },
+      "qualityMetrics": {
+        "assertions": 1,
+        "asyncOperations": 0,
+        "mockUsage": 0,
+        "errorHandling": 0,
+        "edgeCases": 0,
+        "complexity": 1,
+        "maintainability": 30,
+        "reliability": 25,
+        "testSmells": ["Weak Assertions", "No Error Handling"],
+        "codePatterns": ["expect"],
+        "isolationScore": 100,
+        "testLength": 3
+      }
+    },
+    {
+      "name": "should test with many smells",
+      "type": "test",
+      "testFile": "/Users/kivancbilen/kivanc/jest-test-lineage-reporter/src/__tests__/smelly-test-example.test.ts",
+      "duration": 200,
+      "coverage": {
+        "/Users/kivancbilen/kivanc/jest-test-lineage-reporter/src/smelly-test-example.ts:10": 1,
+        "/Users/kivancbilen/kivanc/jest-test-lineage-reporter/src/smelly-test-example.ts:10:depth": {
+          "1": 1
+        },
+        "/Users/kivancbilen/kivanc/jest-test-lineage-reporter/src/smelly-test-example.ts:10:performance": {
+          "totalExecutions": 1,
+          "totalCpuTime": 2.5,
+          "totalWallTime": 2.8,
+          "totalMemoryDelta": 2048,
+          "minExecutionTime": 2.8,
+          "maxExecutionTime": 2.8,
+          "executionTimes": [2.8],
+          "cpuCycles": [6720],
+          "performanceVariance": 0,
+          "performanceStdDev": 0,
+          "performanceP95": 0,
+          "performanceP99": 0,
+          "slowExecutions": 1,
+          "fastExecutions": 0,
+          "memoryLeaks": 1,
+          "gcPressure": 1
+        },
+        "/Users/kivancbilen/kivanc/jest-test-lineage-reporter/src/smelly-test-example.ts:10:meta": {
+          "nodeType": "return-statement",
+          "firstExecution": 1755679500200,
+          "minDepth": 1,
+          "maxDepth": 1
+        }
+      },
+      "qualityMetrics": {
+        "assertions": 15,
+        "asyncOperations": 2,
+        "mockUsage": 8,
+        "errorHandling": 0,
+        "edgeCases": 0,
+        "complexity": 5,
+        "maintainability": 20,
+        "reliability": 15,
+        "testSmells": ["Long Test", "Too Many Assertions", "Excessive Mocking", "Sleep/Wait Usage"],
+        "codePatterns": ["expect", "toBe", "setTimeout"],
+        "isolationScore": 40,
+        "testLength": 65
       }
     }
   ]

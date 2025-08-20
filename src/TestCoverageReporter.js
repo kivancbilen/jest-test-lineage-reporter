@@ -1138,10 +1138,16 @@ class TestCoverageReporter {
         .smells-few {
             color: #ffc107;
             font-weight: bold;
+            cursor: help;
         }
         .smells-many {
             color: #dc3545;
             font-weight: bold;
+            cursor: help;
+        }
+        .smells-few[title]:hover,
+        .smells-many[title]:hover {
+            text-decoration: underline;
         }
         .performance-analysis,
         .quality-analysis,
@@ -2335,6 +2341,7 @@ class TestCoverageReporter {
         let gcPressure = 0;
         let slowExecutions = 0;
         let fastExecutions = 0;
+        let allTestSmells = new Set(); // Collect unique test smells
 
         tests.forEach(test => {
           totalExecutions += test.executionCount || 1;
@@ -2363,6 +2370,11 @@ class TestCoverageReporter {
             totalTestSmells += test.quality.testSmells ? test.quality.testSmells.length : 0;
             totalAssertions += test.quality.assertions || 0;
             totalComplexity += test.quality.complexity || 0;
+
+            // Collect individual test smells
+            if (test.quality.testSmells && Array.isArray(test.quality.testSmells)) {
+              test.quality.testSmells.forEach(smell => allTestSmells.add(smell));
+            }
           }
         });
 
@@ -2420,7 +2432,8 @@ class TestCoverageReporter {
             totalTestSmells: totalTestSmells,
             totalAssertions: totalAssertions,
             totalComplexity: totalComplexity,
-            qualityScore: (avgQuality + avgReliability + avgMaintainability) / 3
+            qualityScore: (avgQuality + avgReliability + avgMaintainability) / 3,
+            testSmells: Array.from(allTestSmells) // Include the actual smell names
           }
         });
       }
@@ -2638,10 +2651,14 @@ class TestCoverageReporter {
                         return \`<span class="quality-poor">\${rounded}%</span>\`;
                     };
 
-                    const formatTestSmells = (count) => {
+                    const formatTestSmells = (count, smells) => {
                         if (count === 0) return \`<span class="smells-none">0</span>\`;
-                        if (count <= 2) return \`<span class="smells-few">\${count}</span>\`;
-                        return \`<span class="smells-many">\${count}</span>\`;
+
+                        const smellsText = smells && smells.length > 0 ? smells.join(', ') : '';
+                        const title = smellsText ? \`title="\${smellsText}"\` : '';
+
+                        if (count <= 2) return \`<span class="smells-few" \${title}>\${count}</span>\`;
+                        return \`<span class="smells-many" \${title}>\${count}</span>\`;
                     };
 
                     html += \`<tr>
@@ -2655,7 +2672,7 @@ class TestCoverageReporter {
                         <td class="wall-time">\${formatTime(line.performance?.totalWallTime || 0)}</td>
                         <td class="quality-score">\${formatQuality(line.quality?.qualityScore || 0)}</td>
                         <td class="reliability-score">\${formatQuality(line.quality?.avgReliability || 0)}</td>
-                        <td class="test-smells">\${formatTestSmells(line.quality?.totalTestSmells || 0)}</td>
+                        <td class="test-smells">\${formatTestSmells(line.quality?.totalTestSmells || 0, line.quality?.testSmells)}</td>
                         <td class="max-depth"><span class="depth-badge \${depthClass}">D\${line.maxDepth}</span></td>
                         <td class="depth-range">\${line.depthRange}</td>
                     </tr>\`;
@@ -2942,7 +2959,10 @@ class TestCoverageReporter {
                         <td>\${line.fileName}</td>
                         <td>\${line.lineNumber}</td>
                         <td class="\${qualityClass}">\${Math.round(line.quality.qualityScore)}%</td>
-                        <td class="quality-issues">\${line.quality.totalTestSmells} smells, \${line.quality.totalAssertions} assertions</td>
+                        <td class="quality-issues">
+                            \${line.quality.totalTestSmells} smells\${line.quality.testSmells && line.quality.testSmells.length > 0 ? ' (' + line.quality.testSmells.join(', ') + ')' : ''},
+                            \${line.quality.totalAssertions} assertions
+                        </td>
                         <td class="recommendations">\${recommendations.join(', ') || 'Good as is'}</td>
                     </tr>\`;
                 });
