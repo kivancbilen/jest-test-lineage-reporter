@@ -1,5 +1,8 @@
 # Jest Test Lineage Reporter
 
+**VIBE CODED
+Public disclaimer: This package is vibe coded, please use at your own risk**
+
 A comprehensive test analytics platform that provides line-by-line test coverage, performance metrics, memory analysis, test quality scoring, and mutation testing.
 
 ## Features
