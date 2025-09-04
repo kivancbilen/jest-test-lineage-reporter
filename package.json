@@ -1,6 +1,6 @@
 {
   "name": "jest-test-lineage-reporter",
-  "version": "2.0.1",
+  "version": "2.0.2",
   "main": "src/TestCoverageReporter.js",
   "scripts": {
     "test": "jest",
@@ -48,8 +48,10 @@
   },
   "files": [
     "src/TestCoverageReporter.js",
+    "src/MutationTester.js",
     "src/testSetup.js",
     "src/babel-plugin-lineage-tracker.js",
+    "src/babel-plugin-mutation-tester.js",
     "src/config.js",
     "babel.config.js",
     "README.md",
