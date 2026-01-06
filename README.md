@@ -20,28 +20,57 @@ A comprehensive test analytics platform that provides line-by-line test coverage
 
 ## 🚀 CLI Usage (New!)
 
-Jest Test Lineage Reporter now includes a powerful CLI tool!
+Jest Test Lineage Reporter now includes a powerful CLI tool with automatic configuration!
 
 ### Quick Start with CLI
 
 ```bash
-# Run tests with lineage tracking
-jest-lineage test
+# 1. Install the package
+npm install --save-dev jest-test-lineage-reporter jest babel-jest @babel/core @babel/preset-env
 
-# Run mutation testing on existing data
-jest-lineage mutate --threshold 85
+# 2. Initialize configuration (creates jest.config.js and babel.config.js)
+npx jest-lineage init
 
-# Generate HTML report
-jest-lineage report --open
+# 3. Run tests with lineage tracking
+npx jest-lineage test
 
-# Query which tests cover a specific line
-jest-lineage query src/calculator.ts 42
+# 4. Generate HTML report
+npx jest-lineage report --open
 
-# Full analysis workflow (test + mutate + report)
-jest-lineage analyze --open
+# 5. Run mutation testing
+npx jest-lineage mutate --threshold 85
+
+# 6. Query which tests cover a specific line
+npx jest-lineage query src/calculator.ts 42
+
+# 7. Full analysis workflow (test + mutate + report)
+npx jest-lineage analyze --open
 ```
 
 ### CLI Commands
+
+#### `jest-lineage init` ⭐ NEW
+Initialize project configuration automatically.
+
+```bash
+# Create jest.config.js and babel.config.js with all required settings
+npx jest-lineage init
+
+# Force overwrite existing config files
+npx jest-lineage init --force
+
+# Configure for TypeScript project
+npx jest-lineage init --typescript
+```
+
+**What it does:**
+- ✅ Checks for required dependencies
+- ✅ Creates `jest.config.js` with lineage reporter configured
+- ✅ Creates `babel.config.js` with instrumentation plugin
+- ✅ Detects TypeScript and configures accordingly
+- ✅ Shows clear next steps
+
+
 
 #### `jest-lineage test [jest-args...]`
 Run Jest tests with lineage tracking enabled.

@@ -4,6 +4,7 @@
  */
 
 const { Command } = require('commander');
+const initCommand = require('./commands/init');
 const testCommand = require('./commands/test');
 const mutateCommand = require('./commands/mutate');
 const reportCommand = require('./commands/report');
@@ -18,6 +19,15 @@ async function run(argv) {
     .name('jest-lineage')
     .description('Comprehensive test analytics with lineage tracking and mutation testing')
     .version(pkg.version, '-v, --version', 'Display version number');
+
+  // Init command - Initialize project configuration
+  program
+    .command('init')
+    .description('Initialize jest-test-lineage-reporter configuration')
+    .option('--force', 'Overwrite existing configuration files')
+    .option('--typescript', 'Configure for TypeScript project')
+    .option('--verbose', 'Show detailed error messages')
+    .action(initCommand);
 
   // Test command - Run Jest with lineage tracking
   program
