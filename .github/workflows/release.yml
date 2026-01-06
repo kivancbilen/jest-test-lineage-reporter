@@ -1,0 +1,109 @@
+name: Create Release PR
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version type (patch, minor, major)'
+        required: true
+        type: choice
+        options:
+          - patch
+          - minor
+          - major
+          - prepatch
+          - preminor
+          - premajor
+
+jobs:
+  create-release-pr:
+    name: Create Release PR
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Configure Git
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Bump version
+        id: version
+        run: |
+          OLD_VERSION=$(node -p "require('./package.json').version")
+          npm version ${{ github.event.inputs.version }} --no-git-tag-version
+          NEW_VERSION=$(node -p "require('./package.json').version")
+          echo "old_version=${OLD_VERSION}" >> $GITHUB_OUTPUT
+          echo "new_version=${NEW_VERSION}" >> $GITHUB_OUTPUT
+          echo "Bumped version from ${OLD_VERSION} to ${NEW_VERSION}"
+
+      - name: Update CHANGELOG
+        run: |
+          DATE=$(date +%Y-%m-%d)
+          VERSION="${{ steps.version.outputs.new_version }}"
+
+          # Add new version header to CHANGELOG
+          sed -i.bak "s/## \[Unreleased\]/## [Unreleased]\n\n## [$VERSION] - $DATE/" CHANGELOG.md
+          rm CHANGELOG.md.bak
+
+      - name: Create release branch
+        run: |
+          BRANCH_NAME="release/v${{ steps.version.outputs.new_version }}"
+          git checkout -b $BRANCH_NAME
+          git add package.json package-lock.json CHANGELOG.md
+          git commit -m "chore: bump version to ${{ steps.version.outputs.new_version }}"
+          git push origin $BRANCH_NAME
+          echo "branch_name=${BRANCH_NAME}" >> $GITHUB_OUTPUT
+        id: branch
+
+      - name: Create Pull Request
+        uses: peter-evans/create-pull-request@v5
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          branch: release/v${{ steps.version.outputs.new_version }}
+          title: "Release v${{ steps.version.outputs.new_version }}"
+          body: |
+            ## Release v${{ steps.version.outputs.new_version }}
+
+            This PR prepares the release of version ${{ steps.version.outputs.new_version }}.
+
+            ### Changes
+            - Bumped version from ${{ steps.version.outputs.old_version }} to ${{ steps.version.outputs.new_version }}
+            - Updated CHANGELOG.md
+
+            ### Checklist
+            - [ ] Review CHANGELOG.md for completeness
+            - [ ] Ensure all tests pass
+            - [ ] Update documentation if needed
+            - [ ] Verify package.json version is correct
+
+            ### After Merging
+            1. The merge will trigger CI tests
+            2. Create and push a tag manually:
+               ```bash
+               git checkout main
+               git pull
+               git tag v${{ steps.version.outputs.new_version }}
+               git push origin v${{ steps.version.outputs.new_version }}
+               ```
+            3. This will automatically publish to NPM and create a GitHub Release
+
+            ---
+            **Type**: ${{ github.event.inputs.version }}
+            **Previous Version**: ${{ steps.version.outputs.old_version }}
+            **New Version**: ${{ steps.version.outputs.new_version }}
+          labels: release
+          assignees: ${{ github.actor }}

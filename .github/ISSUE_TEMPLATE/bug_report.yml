@@ -1,0 +1,83 @@
+name: Bug Report
+description: Report a bug or issue with jest-test-lineage-reporter
+title: "[Bug]: "
+labels: ["bug", "triage"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for taking the time to report a bug! Please fill out the form below.
+
+  - type: textarea
+    id: description
+    attributes:
+      label: Bug Description
+      description: A clear and concise description of what the bug is.
+      placeholder: What happened?
+    validations:
+      required: true
+
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: Steps to Reproduce
+      description: Steps to reproduce the behavior
+      placeholder: |
+        1. Install package with '...'
+        2. Run command '...'
+        3. See error
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected Behavior
+      description: What did you expect to happen?
+      placeholder: What should happen?
+    validations:
+      required: true
+
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual Behavior
+      description: What actually happened?
+      placeholder: What actually happened?
+    validations:
+      required: true
+
+  - type: textarea
+    id: environment
+    attributes:
+      label: Environment
+      description: Your environment details
+      value: |
+        - OS: [e.g., macOS 13.0, Windows 11, Ubuntu 22.04]
+        - Node.js version: [e.g., 18.0.0]
+        - npm version: [e.g., 9.0.0]
+        - jest-test-lineage-reporter version: [e.g., 2.0.2]
+        - Jest version: [e.g., 29.0.0]
+      render: markdown
+    validations:
+      required: true
+
+  - type: textarea
+    id: config
+    attributes:
+      label: Configuration
+      description: Your jest.config.js and babel.config.js (if relevant)
+      render: javascript
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: Error Logs
+      description: Paste any relevant error logs or screenshots
+      render: shell
+
+  - type: textarea
+    id: additional
+    attributes:
+      label: Additional Context
+      description: Add any other context about the problem here

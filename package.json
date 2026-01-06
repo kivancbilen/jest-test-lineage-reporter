@@ -1,7 +1,10 @@
 {
   "name": "jest-test-lineage-reporter",
-  "version": "2.0.2",
+  "version": "2.1.0",
   "main": "src/TestCoverageReporter.js",
+  "bin": {
+    "jest-lineage": "./bin/jest-lineage.js"
+  },
   "scripts": {
     "test": "jest",
     "test:watch": "jest --watch",
@@ -47,16 +50,20 @@
     "npm": ">=6.0.0"
   },
   "files": [
-    "src/TestCoverageReporter.js",
-    "src/MutationTester.js",
-    "src/testSetup.js",
-    "src/babel-plugin-lineage-tracker.js",
-    "src/babel-plugin-mutation-tester.js",
-    "src/config.js",
+    "bin/",
+    "src/",
     "babel.config.js",
     "README.md",
     "LICENSE"
   ],
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^0.5.0",
+    "chalk": "^4.1.2",
+    "cli-table3": "^0.6.3",
+    "commander": "^11.0.0",
+    "open": "^8.4.0",
+    "ora": "^5.4.1"
+  },
   "devDependencies": {
     "@babel/core": "^7.23.0",
     "@babel/plugin-transform-modules-commonjs": "^7.27.1",

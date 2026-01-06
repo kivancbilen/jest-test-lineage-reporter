@@ -16,6 +16,258 @@ A comprehensive test analytics platform that provides line-by-line test coverage
 - **Easy integration**: Simple Jest reporter that works alongside existing reporters
 - **TypeScript support**: Built with TypeScript support out of the box
 - **Statistics and insights**: File-level and overall statistics about test coverage patterns
+- **🆕 CLI Tool**: Powerful command-line interface for standalone operations
+
+## 🚀 CLI Usage (New!)
+
+Jest Test Lineage Reporter now includes a powerful CLI tool!
+
+### Quick Start with CLI
+
+```bash
+# Run tests with lineage tracking
+jest-lineage test
+
+# Run mutation testing on existing data
+jest-lineage mutate --threshold 85
+
+# Generate HTML report
+jest-lineage report --open
+
+# Query which tests cover a specific line
+jest-lineage query src/calculator.ts 42
+
+# Full analysis workflow (test + mutate + report)
+jest-lineage analyze --open
+```
+
+### CLI Commands
+
+#### `jest-lineage test [jest-args...]`
+Run Jest tests with lineage tracking enabled.
+
+```bash
+# Basic usage
+jest-lineage test
+
+# Pass Jest arguments
+jest-lineage test --watch --testPathPattern=calculator
+
+# Disable specific features
+jest-lineage test --no-performance --no-quality
+```
+
+#### `jest-lineage mutate`
+Run mutation testing standalone (on existing lineage data).
+
+```bash
+# Basic mutation testing
+jest-lineage mutate
+
+# With custom threshold
+jest-lineage mutate --threshold 90
+
+# Debug mode (create mutation files without running tests)
+jest-lineage mutate --debug --debug-dir ./mutations
+```
+
+#### `jest-lineage report`
+Generate HTML report from existing lineage data.
+
+```bash
+# Generate and open report
+jest-lineage report --open
+
+# Custom output path
+jest-lineage report --output coverage-report.html
+```
+
+#### `jest-lineage query <file> [line]`
+Query which tests cover specific files or lines.
+
+```bash
+# Query entire file
+jest-lineage query src/calculator.ts
+
+# Query specific line
+jest-lineage query src/calculator.ts 42
+```
+
+#### `jest-lineage analyze`
+Full workflow: run tests, mutation testing, and generate report.
+
+```bash
+# Complete analysis
+jest-lineage analyze --open
+
+# Skip mutation testing
+jest-lineage analyze --skip-mutation --open
+
+# Use existing test data
+jest-lineage analyze --skip-tests --open
+```
+
+### CLI Options
+
+```
+Global Options:
+  -v, --version          Show version number
+  -h, --help            Show help
+
+Test Command:
+  --config <path>       Path to Jest config file
+  --no-lineage          Disable lineage tracking
+  --no-performance      Disable performance tracking
+  --no-quality          Disable quality analysis
+  --quiet, -q           Suppress console output
+
+Mutate Command:
+  --data <path>         Path to lineage data file (default: .jest-lineage-data.json)
+  --threshold <number>  Mutation score threshold (default: 80)
+  --timeout <ms>        Timeout per mutation (default: 5000)
+  --debug               Create debug mutation files
+  --debug-dir <path>    Directory for debug files (default: ./mutations-debug)
+  --verbose             Enable debug logging
+
+Report Command:
+  --data <path>         Path to lineage data file
+  --output <path>       Output HTML file path (default: test-lineage-report.html)
+  --open                Open report in browser
+  --format <type>       Report format (default: html)
+
+Query Command:
+  --data <path>         Path to lineage data file
+  --json                Output as JSON
+  --format <type>       Output format: table, list, json (default: table)
+
+Analyze Command:
+  --config <path>       Path to Jest config file
+  --threshold <number>  Mutation score threshold (default: 80)
+  --output <path>       Output HTML file path
+  --open                Open report in browser
+  --skip-tests          Skip running tests (use existing data)
+  --skip-mutation       Skip mutation testing
+```
+
+### Configuration Priority
+
+The CLI respects configuration from multiple sources with this priority:
+
+1. **CLI Arguments** (highest priority)
+2. **Environment Variables** (`JEST_LINEAGE_*`)
+3. **Config File** (jest.config.js)
+4. **package.json** (`"jest-lineage"` field)
+5. **Defaults** (lowest priority)
+
+Example package.json configuration:
+
+```json
+{
+  "jest-lineage": {
+    "mutationThreshold": 85,
+    "outputFile": "test-analytics.html",
+    "enableMutationTesting": true
+  }
+}
+```
+
+## 🤖 MCP Server (New!)
+
+Jest Test Lineage Reporter now includes a Model Context Protocol (MCP) server for programmatic access via AI assistants like Claude.
+
+### What is MCP?
+
+The Model Context Protocol allows AI assistants to interact with your test infrastructure programmatically. With the MCP server, you can ask Claude to run tests, analyze mutation scores, generate reports, and query coverage data directly.
+
+### Setting Up the MCP Server
+
+Add to your Claude Desktop configuration (`~/Library/Application Support/Claude/claude_desktop_config.json` on macOS):
+
+```json
+{
+  "mcpServers": {
+    "jest-test-lineage-reporter": {
+      "command": "node",
+      "args": [
+        "/path/to/your/project/node_modules/jest-test-lineage-reporter/src/mcp/server.js"
+      ]
+    }
+  }
+}
+```
+
+Or if installed globally:
+
+```json
+{
+  "mcpServers": {
+    "jest-test-lineage-reporter": {
+      "command": "node",
+      "args": [
+        "$(npm root -g)/jest-test-lineage-reporter/src/mcp/server.js"
+      ]
+    }
+  }
+}
+```
+
+### Available MCP Tools
+
+The MCP server exposes these tools:
+
+#### `run_tests`
+Run Jest tests with lineage tracking and generate coverage data.
+
+**Parameters:**
+- `args` (array): Jest command-line arguments
+- `enableLineage` (boolean): Enable lineage tracking (default: true)
+- `enablePerformance` (boolean): Enable performance tracking (default: true)
+- `enableQuality` (boolean): Enable quality analysis (default: true)
+
+#### `run_mutation_testing`
+Run mutation testing on existing lineage data to assess test effectiveness.
+
+**Parameters:**
+- `dataPath` (string): Path to lineage data file (default: `.jest-lineage-data.json`)
+- `threshold` (number): Minimum mutation score threshold 0-100 (default: 80)
+- `timeout` (number): Timeout per mutation in milliseconds (default: 5000)
+- `debug` (boolean): Create debug mutation files instead of running tests (default: false)
+
+#### `generate_report`
+Generate HTML report from existing lineage data.
+
+**Parameters:**
+- `dataPath` (string): Path to lineage data file (default: `.jest-lineage-data.json`)
+- `outputPath` (string): Output HTML file path (default: `test-lineage-report.html`)
+
+#### `query_coverage`
+Query which tests cover specific files or lines.
+
+**Parameters:**
+- `file` (string, required): File path to query (e.g., "src/calculator.ts")
+- `line` (number, optional): Line number to query
+- `dataPath` (string): Path to lineage data file (default: `.jest-lineage-data.json`)
+
+#### `analyze_full`
+Run full workflow: tests, mutation testing, and generate report.
+
+**Parameters:**
+- `skipTests` (boolean): Skip running tests (use existing data) (default: false)
+- `skipMutation` (boolean): Skip mutation testing (default: false)
+- `threshold` (number): Mutation score threshold (default: 80)
+- `outputPath` (string): Output HTML file path (default: `test-lineage-report.html`)
+
+### Example MCP Usage with Claude
+
+Once configured, you can ask Claude:
+
+- "Run the tests with lineage tracking"
+- "Run mutation testing with an 85% threshold"
+- "Generate an HTML report from the latest test data"
+- "Which tests cover line 42 of src/calculator.ts?"
+- "Run a full analysis and generate the report"
+
+Claude will use the MCP server to execute these operations in your project.
 
 ## 📦 Installation
 

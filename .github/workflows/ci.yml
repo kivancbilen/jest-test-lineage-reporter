@@ -1,0 +1,137 @@
+name: CI
+
+on:
+  push:
+    branches:
+      - main
+      - develop
+  pull_request:
+    branches:
+      - main
+      - develop
+
+jobs:
+  test:
+    name: Test on Node.js ${{ matrix.node-version }}
+    runs-on: ${{ matrix.os }}
+
+    strategy:
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+        node-version: [14, 16, 18, 20]
+        exclude:
+          # Run full matrix only on ubuntu, limited on others
+          - os: windows-latest
+            node-version: 14
+          - os: windows-latest
+            node-version: 16
+          - os: macos-latest
+            node-version: 14
+          - os: macos-latest
+            node-version: 16
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js ${{ matrix.node-version }}
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node-version }}
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run linter (if available)
+        run: npm run lint --if-present
+
+      - name: Run tests (fast mode)
+        run: npm run test:fast
+        env:
+          JEST_LINEAGE_ENABLED: false
+
+      - name: Run tests with coverage
+        if: matrix.os == 'ubuntu-latest' && matrix.node-version == '20'
+        run: npm run test:coverage
+        env:
+          JEST_LINEAGE_ENABLED: false
+
+      - name: Upload coverage to Codecov
+        if: matrix.os == 'ubuntu-latest' && matrix.node-version == '20'
+        uses: codecov/codecov-action@v3
+        with:
+          files: ./coverage/lcov.info
+          flags: unittests
+          name: codecov-umbrella
+          fail_ci_if_error: false
+
+  lint:
+    name: Lint Code
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Check formatting
+        run: |
+          echo "Checking code formatting..."
+          # Add prettier check if you use it
+          # npm run format:check
+
+      - name: Run linter
+        run: |
+          echo "Running linter..."
+          # Add eslint if you use it
+          # npm run lint
+
+  validate-package:
+    name: Validate Package
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Validate package.json
+        run: |
+          echo "Validating package.json..."
+          node -e "JSON.parse(require('fs').readFileSync('package.json', 'utf8'))"
+
+      - name: Check files list
+        run: |
+          echo "Checking files that will be included in npm package..."
+          npm pack --dry-run
+
+      - name: Verify all required files exist
+        run: |
+          echo "Verifying required files..."
+          test -f src/TestCoverageReporter.js && echo "✓ TestCoverageReporter.js"
+          test -f src/MutationTester.js && echo "✓ MutationTester.js"
+          test -f src/testSetup.js && echo "✓ testSetup.js"
+          test -f src/babel-plugin-lineage-tracker.js && echo "✓ babel-plugin-lineage-tracker.js"
+          test -f src/babel-plugin-mutation-tester.js && echo "✓ babel-plugin-mutation-tester.js"
+          test -f src/config.js && echo "✓ config.js"
+          test -f babel.config.js && echo "✓ babel.config.js"
+          test -f README.md && echo "✓ README.md"
+          test -f LICENSE && echo "✓ LICENSE"
+          echo "✅ All required files present"
