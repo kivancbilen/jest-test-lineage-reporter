@@ -219,42 +219,99 @@ class MutationTester {
       fileResults: {},
     };
 
-    let currentFileIndex = 0;
-    let currentMutationIndex = 0;
+    // Determine worker count
+    const workers = this.config.workers || 1;
+    const shouldParallelize = workers > 1 || workers === 0;
 
-    for (const [filePath, lines] of Object.entries(this.lineageData)) {
-      currentFileIndex++;
-      console.log(
-        `\n🔬 Testing mutations in ${filePath} (${currentFileIndex}/${totalFiles})...`
-      );
+    if (shouldParallelize) {
+      // Parallel execution - process multiple files concurrently
+      const os = require('os');
+      const actualWorkers = workers === 0 ? Math.max(1, os.cpus().length - 1) : workers;
+      console.log(`\n⚡ Running mutations in parallel with ${actualWorkers} workers\n`);
 
-      const fileResults = await this.testFileLines(
-        filePath,
-        lines,
-        currentMutationIndex,
-        totalMutationsCount
-      );
-      results.fileResults[filePath] = fileResults;
+      const fileEntries = Object.entries(this.lineageData);
+      const filePromises = fileEntries.map(async ([filePath, lines], index) => {
+        console.log(
+          `\n🔬 [Worker ${(index % actualWorkers) + 1}] Testing mutations in ${filePath} (${index + 1}/${totalFiles})...`
+        );
 
-      results.totalMutations += fileResults.totalMutations;
-      results.killedMutations += fileResults.killedMutations;
-      results.survivedMutations += fileResults.survivedMutations;
-      results.timeoutMutations += fileResults.timeoutMutations;
-      results.errorMutations += fileResults.errorMutations;
+        const fileResults = await this.testFileLines(
+          filePath,
+          lines,
+          0, // Start from 0 for each file in parallel mode
+          totalMutationsCount
+        );
 
-      currentMutationIndex += fileResults.totalMutations;
+        // Log file completion summary
+        const fileName = filePath.split("/").pop();
+        const fileScore =
+          fileResults.totalMutations > 0
+            ? Math.round(
+                (fileResults.killedMutations / fileResults.totalMutations) * 100
+              )
+            : 0;
+        console.log(
+          `✅ [Worker ${(index % actualWorkers) + 1}] ${fileName}: ${fileResults.totalMutations} mutations, ${fileResults.killedMutations} killed, ${fileResults.survivedMutations} survived (${fileScore}% score)`
+        );
 
-      // Log file completion summary
-      const fileName = filePath.split("/").pop();
-      const fileScore =
-        fileResults.totalMutations > 0
-          ? Math.round(
-              (fileResults.killedMutations / fileResults.totalMutations) * 100
-            )
-          : 0;
-      console.log(
-        `✅ ${fileName}: ${fileResults.totalMutations} mutations, ${fileResults.killedMutations} killed, ${fileResults.survivedMutations} survived (${fileScore}% score)`
-      );
+        return { filePath, fileResults };
+      });
+
+      // Process files with concurrency limit
+      const chunkSize = actualWorkers;
+      for (let i = 0; i < filePromises.length; i += chunkSize) {
+        const chunk = filePromises.slice(i, i + chunkSize);
+        const chunkResults = await Promise.all(chunk);
+
+        // Aggregate results
+        for (const { filePath, fileResults } of chunkResults) {
+          results.fileResults[filePath] = fileResults;
+          results.totalMutations += fileResults.totalMutations;
+          results.killedMutations += fileResults.killedMutations;
+          results.survivedMutations += fileResults.survivedMutations;
+          results.timeoutMutations += fileResults.timeoutMutations;
+          results.errorMutations += fileResults.errorMutations;
+        }
+      }
+    } else {
+      // Serial execution - process one file at a time
+      let currentFileIndex = 0;
+      let currentMutationIndex = 0;
+
+      for (const [filePath, lines] of Object.entries(this.lineageData)) {
+        currentFileIndex++;
+        console.log(
+          `\n🔬 Testing mutations in ${filePath} (${currentFileIndex}/${totalFiles})...`
+        );
+
+        const fileResults = await this.testFileLines(
+          filePath,
+          lines,
+          currentMutationIndex,
+          totalMutationsCount
+        );
+        results.fileResults[filePath] = fileResults;
+
+        results.totalMutations += fileResults.totalMutations;
+        results.killedMutations += fileResults.killedMutations;
+        results.survivedMutations += fileResults.survivedMutations;
+        results.timeoutMutations += fileResults.timeoutMutations;
+        results.errorMutations += fileResults.errorMutations;
+
+        currentMutationIndex += fileResults.totalMutations;
+
+        // Log file completion summary
+        const fileName = filePath.split("/").pop();
+        const fileScore =
+          fileResults.totalMutations > 0
+            ? Math.round(
+                (fileResults.killedMutations / fileResults.totalMutations) * 100
+              )
+            : 0;
+        console.log(
+          `✅ ${fileName}: ${fileResults.totalMutations} mutations, ${fileResults.killedMutations} killed, ${fileResults.survivedMutations} survived (${fileScore}% score)`
+        );
+      }
     }
 
     // Calculate mutation score

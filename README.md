@@ -90,15 +90,23 @@ jest-lineage test --no-performance --no-quality
 Run mutation testing standalone (on existing lineage data).
 
 ```bash
-# Basic mutation testing
+# Basic mutation testing (serial)
 jest-lineage mutate
 
 # With custom threshold
 jest-lineage mutate --threshold 90
 
+# Parallel execution with 4 workers (faster!)
+jest-lineage mutate --workers 4
+
+# Auto-detect CPU cores and use optimal worker count
+jest-lineage mutate --workers 0
+
 # Debug mode (create mutation files without running tests)
 jest-lineage mutate --debug --debug-dir ./mutations
 ```
+
+**Performance Tip**: Use `--workers` to run mutations in parallel. Each worker processes a different file concurrently, significantly reducing execution time for projects with multiple files.
 
 **Note**: Mutation results are saved to `.jest-lineage-mutation-results.json`. Run `jest-lineage report` after mutation testing to generate an HTML report with mutation data included.
 

@@ -50,6 +50,9 @@ function mapCliOptionsToConfig(cliOptions) {
   if (cliOptions.timeout !== undefined) {
     config.mutationTimeout = parseInt(cliOptions.timeout);
   }
+  if (cliOptions.workers !== undefined) {
+    config.workers = parseInt(cliOptions.workers);
+  }
   if (cliOptions.debug === true) {
     config.debugMutations = true;
   }

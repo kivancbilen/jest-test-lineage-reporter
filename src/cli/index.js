@@ -47,6 +47,7 @@ async function run(argv) {
     .option('--data <path>', 'Path to lineage data file', '.jest-lineage-data.json')
     .option('--threshold <number>', 'Mutation score threshold (%)', '80')
     .option('--timeout <ms>', 'Timeout per mutation (ms)', '5000')
+    .option('--workers <number>', 'Number of parallel workers (1=serial, 0=auto)', '1')
     .option('--debug', 'Create debug mutation files instead of running tests')
     .option('--debug-dir <path>', 'Directory for debug files', './mutations-debug')
     .option('--operators <list>', 'Comma-separated mutation operators to enable')
