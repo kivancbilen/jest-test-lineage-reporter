@@ -347,11 +347,23 @@ class MutationTester {
       let mutationIndex = 0;
       const projectPath = process.cwd();
 
+      // Convert lineageData to use relative paths for Docker
+      const relativeLineageData = {};
+
       for (const [filePath, lines] of Object.entries(this.lineageData)) {
         // Convert absolute path to relative path for Docker
         const relativePath = path.relative(projectPath, filePath);
+        relativeLineageData[relativePath] = {};
 
         for (const [lineNumber, tests] of Object.entries(lines)) {
+          // Convert test file paths to relative as well
+          const relativeTests = tests.map(test => ({
+            ...test,
+            testFile: path.relative(projectPath, test.testFile)
+          }));
+
+          relativeLineageData[relativePath][lineNumber] = relativeTests;
+
           const sourceCode = this.getSourceCodeLine(
             filePath,
             parseInt(lineNumber)
@@ -369,7 +381,7 @@ class MutationTester {
               filePath: relativePath,  // Use relative path for Docker
               lineNumber: parseInt(lineNumber),
               mutationType,
-              tests,
+              tests: relativeTests,
               index: mutationIndex
             });
           });
@@ -382,9 +394,9 @@ class MutationTester {
         projectPath
       });
 
-      // Run mutations in Docker containers
+      // Run mutations in Docker containers with relative paths
       const results = await coordinator.runMutationTesting(
-        this.lineageData,
+        relativeLineageData,
         mutations
       );
 
@@ -856,9 +868,14 @@ class MutationTester {
         console.log(`📁 Running all tests in files: ${testFiles.join(', ')}`);
       }
 
+      // Determine the working directory for Jest
+      // In Docker mode, PROJECT_PATH env var points to the mounted project directory
+      const cwd = process.env.PROJECT_PATH || process.cwd();
+
       const jest = spawn("jest", [...jestArgs], {
         stdio: "pipe",
         timeout: this.config.mutationTimeout || 5000,
+        cwd,  // Run Jest from the project directory
         env: {
           ...process.env,
           NODE_ENV: "test",
