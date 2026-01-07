@@ -22,6 +22,20 @@ async function initCommand(options) {
       process.exit(1);
     }
 
+    // Detect if jest-test-lineage-reporter is installed locally or globally
+    const isLocalInstall = isInstalledLocally(cwd);
+
+    if (!isLocalInstall) {
+      warning('jest-test-lineage-reporter is installed globally.');
+      warning('For best results, install it locally in your project:\n');
+      console.log('   npm install --save-dev jest-test-lineage-reporter\n');
+
+      if (!options.force) {
+        error('Global installation detected. Use --force to continue with absolute paths.');
+        process.exit(1);
+      }
+    }
+
     // Read package.json to check dependencies
     const packageJson = JSON.parse(fs.readFileSync(packageJsonPath, 'utf8'));
     const allDeps = {
@@ -51,8 +65,11 @@ async function initCommand(options) {
       if (!options.force) {
         warning(`jest.config.js already exists. Use --force to overwrite.`);
         info('Please manually add the following to your jest.config.js:');
+        const setupPath = isLocalInstall
+          ? 'jest-test-lineage-reporter/src/testSetup.js'
+          : getGlobalPackagePath('testSetup.js');
         console.log(`
-  setupFilesAfterEnv: ['jest-test-lineage-reporter/src/testSetup.js'],
+  setupFilesAfterEnv: ['${setupPath}'],
 
   reporters: [
     'default',
@@ -70,11 +87,11 @@ async function initCommand(options) {
   },
 `);
       } else {
-        createJestConfig(jestConfigPath, options);
+        createJestConfig(jestConfigPath, options, isLocalInstall);
         jestConfigCreated = true;
       }
     } else {
-      createJestConfig(jestConfigPath, options);
+      createJestConfig(jestConfigPath, options, isLocalInstall);
       jestConfigCreated = true;
     }
 
@@ -84,17 +101,20 @@ async function initCommand(options) {
       if (!options.force) {
         warning(`babel.config.js already exists. Use --force to overwrite.`);
         info('Please manually add the lineage tracker plugin to your babel.config.js:');
+        const pluginPath = isLocalInstall
+          ? 'jest-test-lineage-reporter/src/babel-plugin-lineage-tracker.js'
+          : getGlobalPackagePath('babel-plugin-lineage-tracker.js');
         console.log(`
   plugins: [
-    'jest-test-lineage-reporter/src/babel-plugin-lineage-tracker.js',
+    '${pluginPath}',
   ],
 `);
       } else {
-        createBabelConfig(babelConfigPath, options);
+        createBabelConfig(babelConfigPath, options, isLocalInstall);
         babelConfigCreated = true;
       }
     } else {
-      createBabelConfig(babelConfigPath, options);
+      createBabelConfig(babelConfigPath, options, isLocalInstall);
       babelConfigCreated = true;
     }
 
@@ -137,14 +157,17 @@ async function initCommand(options) {
   }
 }
 
-function createJestConfig(filePath, options) {
+function createJestConfig(filePath, options, isLocalInstall) {
   const isTypeScript = options.typescript || hasTypeScriptFiles();
+  const setupPath = isLocalInstall
+    ? 'jest-test-lineage-reporter/src/testSetup.js'
+    : getGlobalPackagePath('testSetup.js');
 
   const config = `module.exports = {
   testEnvironment: 'node',
 
   // Required: Setup file for lineage tracking
-  setupFilesAfterEnv: ['jest-test-lineage-reporter/src/testSetup.js'],
+  setupFilesAfterEnv: ['${setupPath}'],
 
   // Add the lineage reporter
   reporters: [
@@ -179,8 +202,11 @@ function createJestConfig(filePath, options) {
   fs.writeFileSync(filePath, config, 'utf8');
 }
 
-function createBabelConfig(filePath, options) {
+function createBabelConfig(filePath, options, isLocalInstall) {
   const isTypeScript = options.typescript || hasTypeScriptFiles();
+  const pluginPath = isLocalInstall
+    ? 'jest-test-lineage-reporter/src/babel-plugin-lineage-tracker.js'
+    : getGlobalPackagePath('babel-plugin-lineage-tracker.js');
 
   const config = `module.exports = {
   presets: [
@@ -189,7 +215,7 @@ function createBabelConfig(filePath, options) {
   ],
   plugins: [
     // Required: Lineage tracker plugin for instrumentation
-    'jest-test-lineage-reporter/src/babel-plugin-lineage-tracker.js',
+    '${pluginPath}',
   ],
 };
 `;
@@ -209,6 +235,20 @@ function hasTypeScriptFiles() {
   } catch {
     return false;
   }
+}
+
+function isInstalledLocally(cwd) {
+  const localPath = path.join(cwd, 'node_modules', 'jest-test-lineage-reporter');
+  return fs.existsSync(localPath);
+}
+
+function getGlobalPackagePath(filename) {
+  // Get the directory where this script is running from
+  const scriptDir = path.dirname(path.dirname(path.dirname(__dirname)));
+  const srcPath = path.join(scriptDir, 'src', filename);
+
+  // Return absolute path
+  return srcPath;
 }
 
 module.exports = initCommand;
