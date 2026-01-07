@@ -231,15 +231,17 @@ class MutationTester {
 
       const fileEntries = Object.entries(this.lineageData);
       const filePromises = fileEntries.map(async ([filePath, lines], index) => {
+        const workerId = (index % actualWorkers) + 1;
         console.log(
-          `\n🔬 [Worker ${(index % actualWorkers) + 1}] Testing mutations in ${filePath} (${index + 1}/${totalFiles})...`
+          `\n🔬 [Worker ${workerId}] Testing mutations in ${filePath} (${index + 1}/${totalFiles})...`
         );
 
         const fileResults = await this.testFileLines(
           filePath,
           lines,
           0, // Start from 0 for each file in parallel mode
-          totalMutationsCount
+          totalMutationsCount,
+          workerId
         );
 
         // Log file completion summary
@@ -328,7 +330,7 @@ class MutationTester {
   /**
    * Test mutations for all lines in a specific file
    */
-  async testFileLines(filePath, lines, startMutationIndex, totalMutations) {
+  async testFileLines(filePath, lines, startMutationIndex, totalMutations, workerId = null) {
     const fileResults = {
       totalMutations: 0,
       killedMutations: 0,
@@ -347,7 +349,8 @@ class MutationTester {
         parseInt(lineNumber),
         tests,
         currentMutationIndex,
-        totalMutations
+        totalMutations,
+        workerId
       );
       fileResults.lineResults[lineNumber] = lineResults;
 
@@ -374,7 +377,8 @@ class MutationTester {
     lineNumber,
     tests,
     startMutationIndex,
-    totalMutations
+    totalMutations,
+    workerId = null
   ) {
     const lineResults = {
       totalMutations: 0,
@@ -404,7 +408,8 @@ class MutationTester {
         mutationType,
         tests,
         currentMutationIndex,
-        totalMutations
+        totalMutations,
+        workerId
       );
 
       // Skip mutations that couldn't be applied (null result)
@@ -447,7 +452,8 @@ class MutationTester {
     mutationType,
     tests,
     currentMutationIndex,
-    totalMutations
+    totalMutations,
+    workerId = null
   ) {
     const mutationId = `${filePath}:${lineNumber}:${mutationType}`;
 
@@ -457,8 +463,9 @@ class MutationTester {
       totalMutations > 0
         ? Math.round((currentMutationIndex / totalMutations) * 100)
         : 0;
+    const workerPrefix = workerId ? `[Worker ${workerId}] ` : '';
     console.log(
-      `🔧 Instrumenting: ${filePath} (${currentMutationIndex}/${totalMutations} - ${percentage}%) [${fileName}:${lineNumber} ${mutationType}]`
+      `${workerPrefix}🔧 Instrumenting: ${filePath} (${currentMutationIndex}/${totalMutations} - ${percentage}%) [${fileName}:${lineNumber} ${mutationType}]`
     );
 
     try {
