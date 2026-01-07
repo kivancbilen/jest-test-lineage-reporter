@@ -340,12 +340,17 @@ class MutationTester {
 
     try {
       const DockerCoordinator = require('./docker/DockerCoordinator');
+      const path = require('path');
 
       // Prepare mutations list
       const mutations = [];
       let mutationIndex = 0;
+      const projectPath = process.cwd();
 
       for (const [filePath, lines] of Object.entries(this.lineageData)) {
+        // Convert absolute path to relative path for Docker
+        const relativePath = path.relative(projectPath, filePath);
+
         for (const [lineNumber, tests] of Object.entries(lines)) {
           const sourceCode = this.getSourceCodeLine(
             filePath,
@@ -361,7 +366,7 @@ class MutationTester {
           mutationTypes.forEach(mutationType => {
             mutationIndex++;
             mutations.push({
-              filePath,
+              filePath: relativePath,  // Use relative path for Docker
               lineNumber: parseInt(lineNumber),
               mutationType,
               tests,
@@ -374,7 +379,7 @@ class MutationTester {
       // Create Docker coordinator
       const coordinator = new DockerCoordinator({
         ...this.config,
-        projectPath: process.cwd()
+        projectPath
       });
 
       // Run mutations in Docker containers
