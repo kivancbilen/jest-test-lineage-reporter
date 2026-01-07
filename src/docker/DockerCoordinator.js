@@ -203,7 +203,7 @@ class DockerCoordinator {
         'run',
         '--rm',
         '--name', containerName,
-        '-v', `${this.projectPath}:/project:ro`,
+        '-v', `${this.projectPath}:/project`,  // Remove :ro to allow mutations
         '-v', `${workFile}:/app/work.json:ro`,
         '-v', `${resultsDir}:/app/results`,
         '-e', `WORKER_ID=${workerId}`,

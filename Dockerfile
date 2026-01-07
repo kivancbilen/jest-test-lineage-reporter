@@ -9,8 +9,8 @@ WORKDIR /app
 # Copy package files
 COPY package*.json ./
 
-# Install production dependencies only
-RUN npm ci --only=production && \
+# Install ALL dependencies (including devDependencies needed for mutation testing)
+RUN npm ci && \
     npm cache clean --force
 
 # Copy source files
