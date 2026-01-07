@@ -872,7 +872,11 @@ class MutationTester {
       // In Docker mode, PROJECT_PATH env var points to the mounted project directory
       const cwd = process.env.PROJECT_PATH || process.cwd();
 
-      const jest = spawn("jest", [...jestArgs], {
+      // Use npx to run jest (works in both Docker and host environments)
+      const jestCommand = "npx";
+      const jestCmdArgs = ["jest", ...jestArgs];
+
+      const jest = spawn(jestCommand, jestCmdArgs, {
         stdio: "pipe",
         timeout: this.config.mutationTimeout || 5000,
         cwd,  // Run Jest from the project directory
