@@ -209,6 +209,11 @@ class MutationTester {
       `📊 Planning to test ${totalMutationsCount} mutations across ${totalFiles} files`
     );
 
+    // Check if Docker mode is enabled
+    if (this.config.enableDocker) {
+      return await this.runDockerMutationTesting();
+    }
+
     const results = {
       totalMutations: 0,
       killedMutations: 0,
@@ -325,6 +330,65 @@ class MutationTester {
 
     this.printMutationSummary(results);
     return results;
+  }
+
+  /**
+   * Run mutation testing using Docker containers
+   */
+  async runDockerMutationTesting() {
+    console.log("🐳 Running mutation testing in Docker mode...");
+
+    try {
+      const DockerCoordinator = require('./docker/DockerCoordinator');
+
+      // Prepare mutations list
+      const mutations = [];
+      let mutationIndex = 0;
+
+      for (const [filePath, lines] of Object.entries(this.lineageData)) {
+        for (const [lineNumber, tests] of Object.entries(lines)) {
+          const sourceCode = this.getSourceCodeLine(
+            filePath,
+            parseInt(lineNumber)
+          );
+          const mutationTypes = this.getPossibleMutationTypes(
+            sourceCode,
+            filePath,
+            parseInt(lineNumber)
+          );
+
+          // Add each mutation type to the list
+          mutationTypes.forEach(mutationType => {
+            mutationIndex++;
+            mutations.push({
+              filePath,
+              lineNumber: parseInt(lineNumber),
+              mutationType,
+              tests,
+              index: mutationIndex
+            });
+          });
+        }
+      }
+
+      // Create Docker coordinator
+      const coordinator = new DockerCoordinator({
+        ...this.config,
+        projectPath: process.cwd()
+      });
+
+      // Run mutations in Docker containers
+      const results = await coordinator.runMutationTesting(
+        this.lineageData,
+        mutations
+      );
+
+      this.printMutationSummary(results);
+      return results;
+    } catch (error) {
+      console.error("❌ Docker mutation testing failed:", error.message);
+      throw error;
+    }
   }
 
   /**

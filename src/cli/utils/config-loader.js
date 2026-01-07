@@ -53,6 +53,21 @@ function mapCliOptionsToConfig(cliOptions) {
   if (cliOptions.workers !== undefined) {
     config.workers = parseInt(cliOptions.workers);
   }
+
+  // Docker settings
+  if (cliOptions.docker === true) {
+    config.enableDocker = true;
+  }
+  if (cliOptions.dockerWorkers !== undefined) {
+    config.dockerWorkers = parseInt(cliOptions.dockerWorkers);
+  }
+  if (cliOptions.dockerImage !== undefined) {
+    config.dockerImage = cliOptions.dockerImage;
+  }
+  if (cliOptions.dockerTag !== undefined) {
+    config.dockerImageTag = cliOptions.dockerTag;
+  }
+
   if (cliOptions.debug === true) {
     config.debugMutations = true;
   }

@@ -1,0 +1,43 @@
+# Node modules (will be installed in container)
+node_modules/
+
+# Build artifacts
+dist/
+build/
+
+# Test files and data
+__tests__/
+*.test.js
+*.test.ts
+.jest-lineage-data.json
+.jest-lineage-mutation-results.json
+test-lineage-report.html
+mutations-debug/
+
+# Git files
+.git/
+.gitignore
+.github/
+
+# Documentation
+*.md
+docs/
+
+# IDE files
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Logs
+*.log
+npm-debug.log*
+
+# Temp files
+tmp/
+temp/
+.cache/
+
+# OS files
+.DS_Store
+Thumbs.db

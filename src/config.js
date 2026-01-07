@@ -67,7 +67,13 @@ const DEFAULT_CONFIG = {
   // Debug options
   debugMutations: false,  // Create mutation files for debugging instead of overwriting originals
   debugMutationDir: './mutations-debug', // Directory to store debug mutation files
-  
+
+  // Docker options
+  enableDocker: false,  // Use Docker containers for parallel mutation testing
+  dockerWorkers: 0,  // Number of Docker containers (0 = auto-detect CPU cores - 1)
+  dockerImage: 'jest-lineage-mutation-worker',  // Docker image name
+  dockerImageTag: 'latest',  // Docker image tag
+
   // File filtering
   includePatterns: [
     '**/*.js',
