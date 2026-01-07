@@ -26,6 +26,19 @@ async function reportCommand(options) {
     // Process lineage data
     const lineageData = processLineageDataForMutation(rawData);
 
+    // Load mutation results if available
+    const fs = require('fs');
+    const mutationResultsPath = path.join(process.cwd(), '.jest-lineage-mutation-results.json');
+    let mutationResults = null;
+    if (fs.existsSync(mutationResultsPath)) {
+      try {
+        mutationResults = JSON.parse(fs.readFileSync(mutationResultsPath, 'utf8'));
+        info(`Loaded mutation results: ${chalk.cyan(mutationResults.totalMutations)} mutations tested`);
+      } catch (e) {
+        // Ignore errors loading mutation results
+      }
+    }
+
     // Create reporter instance with minimal config
     const reporter = new TestCoverageReporter(
       { rootDir: process.cwd() },
@@ -34,6 +47,11 @@ async function reportCommand(options) {
 
     // Load data into reporter
     reporter.processLineageResults(lineageData, 'unknown');
+
+    // Set mutation results if available
+    if (mutationResults) {
+      reporter.mutationResults = mutationResults;
+    }
 
     // Generate HTML report
     const spin = spinner('Generating HTML report...');

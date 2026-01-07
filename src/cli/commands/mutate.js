@@ -55,6 +55,13 @@ async function mutateCommand(options) {
       spin.succeed('Mutation testing completed!');
     }
 
+    // Save results to file for HTML report
+    const fs = require('fs');
+    const path = require('path');
+    const resultsPath = path.join(process.cwd(), '.jest-lineage-mutation-results.json');
+    fs.writeFileSync(resultsPath, JSON.stringify(results, null, 2));
+    info(`Mutation results saved to: ${chalk.yellow(resultsPath)}`);
+
     // Print results
     printMutationSummary(results);
 

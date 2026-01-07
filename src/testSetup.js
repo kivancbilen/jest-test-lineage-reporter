@@ -278,7 +278,31 @@ function createTestWrapper(originalFn, testType) {
         if (process.env.JEST_LINEAGE_MUTATION !== 'true') {
           // Also store in a more persistent way for the reporter
           if (!global.__LINEAGE_PERSISTENT_DATA__) {
-            global.__LINEAGE_PERSISTENT_DATA__ = [];
+            // Initialize array - load existing tests from file if merging is enabled
+            // This ensures data persists across test files running in separate workers
+            const shouldMerge = process.env.JEST_LINEAGE_MERGE !== 'false';
+            if (shouldMerge) {
+              const fs = require('fs');
+              const path = require('path');
+              const filePath = path.join(process.cwd(), '.jest-lineage-data.json');
+
+              if (fs.existsSync(filePath)) {
+                try {
+                  const existingData = JSON.parse(fs.readFileSync(filePath, 'utf8'));
+                  // Convert coverage objects back to Maps
+                  global.__LINEAGE_PERSISTENT_DATA__ = existingData.tests.map(test => ({
+                    ...test,
+                    coverage: new Map(Object.entries(test.coverage || {}))
+                  }));
+                } catch (e) {
+                  global.__LINEAGE_PERSISTENT_DATA__ = [];
+                }
+              } else {
+                global.__LINEAGE_PERSISTENT_DATA__ = [];
+              }
+            } else {
+              global.__LINEAGE_PERSISTENT_DATA__ = [];
+            }
           }
           global.__LINEAGE_PERSISTENT_DATA__.push(testData);
 
@@ -645,8 +669,9 @@ function writeTrackingDataToFile() {
   try {
     const filePath = path.join(process.cwd(), '.jest-lineage-data.json');
 
-    // Check if we should merge with existing data (default: false - recreate from scratch)
-    const shouldMerge = process.env.JEST_LINEAGE_MERGE === 'true';
+    // Check if we should merge with existing data (default: true for multiple test files)
+    // Set JEST_LINEAGE_MERGE=false to disable merging and recreate from scratch
+    const shouldMerge = process.env.JEST_LINEAGE_MERGE !== 'false';
 
     let existingData = { timestamp: Date.now(), tests: [] };
     if (shouldMerge && fs.existsSync(filePath)) {
@@ -717,8 +742,6 @@ function writeTrackingDataToFile() {
     }
 
     fs.writeFileSync(filePath, JSON.stringify(dataToWrite, null, 2));
-
-    // console.log(`📝 Wrote tracking data: ${dataToWrite.tests.length} total tests to ${filePath}`);
   } catch (error) {
     console.warn('Warning: Could not write tracking data to file:', error.message);
   }

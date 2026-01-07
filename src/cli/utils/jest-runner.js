@@ -39,6 +39,12 @@ async function runJest(options = {}) {
     jestArgs.push('--coverage');
   }
 
+  // Run tests serially when lineage tracking is enabled to avoid race conditions
+  // with file writes from parallel workers
+  if (enableLineage && !jestArgs.includes('--runInBand') && !jestArgs.includes('--maxWorkers')) {
+    jestArgs.push('--runInBand');
+  }
+
   // Set environment variables for lineage tracking
   const env = {
     ...process.env,

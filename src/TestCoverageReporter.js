@@ -3104,7 +3104,7 @@ class TestCoverageReporter {
                 // Group mutations by line
                 const mutationsByLine = {};
                 fileData.mutations.forEach(mutation => {
-                    const line = mutation.line || 'unknown';
+                    const line = mutation.lineNumber || mutation.line || 'unknown';
                     if (!mutationsByLine[line]) {
                         mutationsByLine[line] = [];
                     }

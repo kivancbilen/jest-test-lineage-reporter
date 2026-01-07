@@ -100,16 +100,20 @@ jest-lineage mutate --threshold 90
 jest-lineage mutate --debug --debug-dir ./mutations
 ```
 
+**Note**: Mutation results are saved to `.jest-lineage-mutation-results.json`. Run `jest-lineage report` after mutation testing to generate an HTML report with mutation data included.
+
 #### `jest-lineage report`
-Generate HTML report from existing lineage data.
+Generate HTML report from existing lineage data and mutation results.
 
 ```bash
-# Generate and open report
+# Generate and open report (includes mutation results if available)
 jest-lineage report --open
 
 # Custom output path
 jest-lineage report --output coverage-report.html
 ```
+
+**Tip**: The report command automatically loads mutation results from `.jest-lineage-mutation-results.json` if available.
 
 #### `jest-lineage query <file> [line]`
 Query which tests cover specific files or lines.
