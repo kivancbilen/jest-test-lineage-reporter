@@ -1,6 +1,6 @@
 {
   "name": "jest-test-lineage-reporter",
-  "version": "2.1.1",
+  "version": "2.1.2",
   "main": "src/TestCoverageReporter.js",
   "bin": {
     "jest-lineage": "./bin/jest-lineage.js"
