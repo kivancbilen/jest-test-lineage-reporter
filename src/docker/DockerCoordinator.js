@@ -199,11 +199,15 @@ class DockerCoordinator {
 
       console.log(`[Worker ${workerId}] 🐳 Starting container: ${containerName}`);
 
+      // Get the jest-lineage-reporter path (from __dirname)
+      const lineageReporterPath = path.resolve(__dirname, '../../..');
+
       const args = [
         'run',
         '--rm',
         '--name', containerName,
-        '-v', `${this.projectPath}:/project`,  // Remove :ro to allow mutations
+        '-v', `${this.projectPath}:/project`,  // Mount project directory
+        '-v', `${lineageReporterPath}:/jest-lineage-reporter:ro`,  // Mount reporter for Jest config
         '-v', `${workFile}:/app/work.json:ro`,
         '-v', `${resultsDir}:/app/results`,
         '-e', `WORKER_ID=${workerId}`,
