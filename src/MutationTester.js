@@ -855,6 +855,11 @@ class MutationTester {
         "--runInBand", // Run tests in the main thread to avoid IPC issues
       ];
 
+      // In Docker mode, override setupFilesAfterEnv with absolute path to fix module resolution
+      if (process.env.PROJECT_PATH) {
+        jestArgs.push("--setupFilesAfterEnv=/jest-lineage-reporter/src/testSetup.js");
+      }
+
       // If specific test names are provided, add testNamePattern to run only those tests
       if (testNames && testNames.length > 0) {
         // Escape special regex characters in test names and join with OR operator
@@ -876,13 +881,19 @@ class MutationTester {
       const jestCommand = "npx";
       const jestCmdArgs = ["jest", ...jestArgs];
 
+      // Debug: Log the exact command being executed
+      console.log(`🔍 Spawning: ${jestCommand} ${jestCmdArgs.join(' ')}`);
+      console.log(`🔍 Working directory: ${cwd}`);
+
       const jest = spawn(jestCommand, jestCmdArgs, {
         stdio: "pipe",
         timeout: this.config.mutationTimeout || 5000,
         cwd,  // Run Jest from the project directory
+        shell: true, // Use shell to execute command (fixes Jest module resolution in Docker)
         env: {
           ...process.env,
           NODE_ENV: "test",
+          NODE_PATH: `${cwd}/node_modules`, // Ensure modules resolve from project directory
           JEST_LINEAGE_MUTATION: "false", // Disable mutation testing mode to allow normal test execution
           JEST_LINEAGE_MUTATION_TESTING: "false", // Disable mutation testing during mutation testing
           JEST_LINEAGE_ENABLED: "false", // Disable all lineage tracking

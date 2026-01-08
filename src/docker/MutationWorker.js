@@ -23,6 +23,10 @@ class MutationWorker {
     console.log(`[Worker ${this.workerId}] Project path: ${this.projectPath}`);
     console.log(`[Worker ${this.workerId}] Results path: ${this.resultsPath}`);
 
+    // Change working directory to project path for proper module resolution
+    process.chdir(this.projectPath);
+    console.log(`[Worker ${this.workerId}] Changed working directory to: ${process.cwd()}`);
+
     try {
       // Read work assignment
       const workAssignment = await this.readWorkAssignment();
