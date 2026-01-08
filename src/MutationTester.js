@@ -209,6 +209,11 @@ class MutationTester {
       `📊 Planning to test ${totalMutationsCount} mutations across ${totalFiles} files`
     );
 
+    // Check if Docker mode is enabled
+    if (this.config.enableDocker) {
+      return await this.runDockerMutationTesting();
+    }
+
     const results = {
       totalMutations: 0,
       killedMutations: 0,
@@ -231,15 +236,17 @@ class MutationTester {
 
       const fileEntries = Object.entries(this.lineageData);
       const filePromises = fileEntries.map(async ([filePath, lines], index) => {
+        const workerId = (index % actualWorkers) + 1;
         console.log(
-          `\n🔬 [Worker ${(index % actualWorkers) + 1}] Testing mutations in ${filePath} (${index + 1}/${totalFiles})...`
+          `\n🔬 [Worker ${workerId}] Testing mutations in ${filePath} (${index + 1}/${totalFiles})...`
         );
 
         const fileResults = await this.testFileLines(
           filePath,
           lines,
           0, // Start from 0 for each file in parallel mode
-          totalMutationsCount
+          totalMutationsCount,
+          workerId
         );
 
         // Log file completion summary
@@ -326,9 +333,85 @@ class MutationTester {
   }
 
   /**
+   * Run mutation testing using Docker containers
+   */
+  async runDockerMutationTesting() {
+    console.log("🐳 Running mutation testing in Docker mode...");
+
+    try {
+      const DockerCoordinator = require('./docker/DockerCoordinator');
+      const path = require('path');
+
+      // Prepare mutations list
+      const mutations = [];
+      let mutationIndex = 0;
+      const projectPath = process.cwd();
+
+      // Convert lineageData to use relative paths for Docker
+      const relativeLineageData = {};
+
+      for (const [filePath, lines] of Object.entries(this.lineageData)) {
+        // Convert absolute path to relative path for Docker
+        const relativePath = path.relative(projectPath, filePath);
+        relativeLineageData[relativePath] = {};
+
+        for (const [lineNumber, tests] of Object.entries(lines)) {
+          // Convert test file paths to relative as well
+          const relativeTests = tests.map(test => ({
+            ...test,
+            testFile: path.relative(projectPath, test.testFile)
+          }));
+
+          relativeLineageData[relativePath][lineNumber] = relativeTests;
+
+          const sourceCode = this.getSourceCodeLine(
+            filePath,
+            parseInt(lineNumber)
+          );
+          const mutationTypes = this.getPossibleMutationTypes(
+            sourceCode,
+            filePath,
+            parseInt(lineNumber)
+          );
+
+          // Add each mutation type to the list
+          mutationTypes.forEach(mutationType => {
+            mutationIndex++;
+            mutations.push({
+              filePath: relativePath,  // Use relative path for Docker
+              lineNumber: parseInt(lineNumber),
+              mutationType,
+              tests: relativeTests,
+              index: mutationIndex
+            });
+          });
+        }
+      }
+
+      // Create Docker coordinator
+      const coordinator = new DockerCoordinator({
+        ...this.config,
+        projectPath
+      });
+
+      // Run mutations in Docker containers with relative paths
+      const results = await coordinator.runMutationTesting(
+        relativeLineageData,
+        mutations
+      );
+
+      this.printMutationSummary(results);
+      return results;
+    } catch (error) {
+      console.error("❌ Docker mutation testing failed:", error.message);
+      throw error;
+    }
+  }
+
+  /**
    * Test mutations for all lines in a specific file
    */
-  async testFileLines(filePath, lines, startMutationIndex, totalMutations) {
+  async testFileLines(filePath, lines, startMutationIndex, totalMutations, workerId = null) {
     const fileResults = {
       totalMutations: 0,
       killedMutations: 0,
@@ -347,7 +430,8 @@ class MutationTester {
         parseInt(lineNumber),
         tests,
         currentMutationIndex,
-        totalMutations
+        totalMutations,
+        workerId
       );
       fileResults.lineResults[lineNumber] = lineResults;
 
@@ -374,7 +458,8 @@ class MutationTester {
     lineNumber,
     tests,
     startMutationIndex,
-    totalMutations
+    totalMutations,
+    workerId = null
   ) {
     const lineResults = {
       totalMutations: 0,
@@ -404,7 +489,8 @@ class MutationTester {
         mutationType,
         tests,
         currentMutationIndex,
-        totalMutations
+        totalMutations,
+        workerId
       );
 
       // Skip mutations that couldn't be applied (null result)
@@ -447,7 +533,8 @@ class MutationTester {
     mutationType,
     tests,
     currentMutationIndex,
-    totalMutations
+    totalMutations,
+    workerId = null
   ) {
     const mutationId = `${filePath}:${lineNumber}:${mutationType}`;
 
@@ -457,8 +544,9 @@ class MutationTester {
       totalMutations > 0
         ? Math.round((currentMutationIndex / totalMutations) * 100)
         : 0;
+    const workerPrefix = workerId ? `[Worker ${workerId}] ` : '';
     console.log(
-      `🔧 Instrumenting: ${filePath} (${currentMutationIndex}/${totalMutations} - ${percentage}%) [${fileName}:${lineNumber} ${mutationType}]`
+      `${workerPrefix}🔧 Instrumenting: ${filePath} (${currentMutationIndex}/${totalMutations} - ${percentage}%) [${fileName}:${lineNumber} ${mutationType}]`
     );
 
     try {
@@ -767,6 +855,11 @@ class MutationTester {
         "--runInBand", // Run tests in the main thread to avoid IPC issues
       ];
 
+      // In Docker mode, override setupFilesAfterEnv with absolute path to fix module resolution
+      if (process.env.PROJECT_PATH) {
+        jestArgs.push("--setupFilesAfterEnv=/jest-lineage-reporter/src/testSetup.js");
+      }
+
       // If specific test names are provided, add testNamePattern to run only those tests
       if (testNames && testNames.length > 0) {
         // Escape special regex characters in test names and join with OR operator
@@ -780,12 +873,27 @@ class MutationTester {
         console.log(`📁 Running all tests in files: ${testFiles.join(', ')}`);
       }
 
-      const jest = spawn("jest", [...jestArgs], {
+      // Determine the working directory for Jest
+      // In Docker mode, PROJECT_PATH env var points to the mounted project directory
+      const cwd = process.env.PROJECT_PATH || process.cwd();
+
+      // Use npx to run jest (works in both Docker and host environments)
+      const jestCommand = "npx";
+      const jestCmdArgs = ["jest", ...jestArgs];
+
+      // Debug: Log the exact command being executed
+      console.log(`🔍 Spawning: ${jestCommand} ${jestCmdArgs.join(' ')}`);
+      console.log(`🔍 Working directory: ${cwd}`);
+
+      const jest = spawn(jestCommand, jestCmdArgs, {
         stdio: "pipe",
         timeout: this.config.mutationTimeout || 5000,
+        cwd,  // Run Jest from the project directory
+        shell: true, // Use shell to execute command (fixes Jest module resolution in Docker)
         env: {
           ...process.env,
           NODE_ENV: "test",
+          NODE_PATH: `${cwd}/node_modules`, // Ensure modules resolve from project directory
           JEST_LINEAGE_MUTATION: "false", // Disable mutation testing mode to allow normal test execution
           JEST_LINEAGE_MUTATION_TESTING: "false", // Disable mutation testing during mutation testing
           JEST_LINEAGE_ENABLED: "false", // Disable all lineage tracking

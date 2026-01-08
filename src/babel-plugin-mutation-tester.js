@@ -328,8 +328,11 @@ function getPossibleMutations(filePath, lineNumber, sourceCode) {
     const possibleMutations = [];
 
     // Parse the entire file to get proper AST context
+    // Disable project babel config to avoid loading project-specific plugins
     const ast = babel.parseSync(fullFileContent, {
       filename: filePath,
+      configFile: false,
+      babelrc: false,
       parserOpts: {
         sourceType: "module",
         allowImportExportEverywhere: true,
