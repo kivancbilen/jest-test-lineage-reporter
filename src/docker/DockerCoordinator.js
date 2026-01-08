@@ -207,7 +207,7 @@ class DockerCoordinator {
         '--rm',
         '--name', containerName,
         '-v', `${this.projectPath}:/project`,  // Mount project directory
-        '-v', `${lineageReporterPath}:/jest-lineage-reporter:ro`,  // Mount reporter for Jest config
+        '-v', `${lineageReporterPath}:/jest-lineage-reporter:ro`,  // Mount reporter separately
         '-v', `${workFile}:/app/work.json:ro`,
         '-v', `${resultsDir}:/app/results`,
         '-e', `WORKER_ID=${workerId}`,

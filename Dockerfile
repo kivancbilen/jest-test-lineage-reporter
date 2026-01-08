@@ -31,11 +31,15 @@ COPY --from=base /app/src ./src
 COPY --from=base /app/babel.config.js ./babel.config.js
 COPY --from=base /app/package.json ./package.json
 
+# Copy entrypoint script
+COPY docker-entrypoint.sh /usr/local/bin/
+RUN chmod +x /usr/local/bin/docker-entrypoint.sh
+
 # Create directory for test results
 RUN mkdir -p /app/results
 
-# Use tini as init system to handle signals properly
-ENTRYPOINT ["/sbin/tini", "--"]
+# Use custom entrypoint with tini
+ENTRYPOINT ["/sbin/tini", "--", "/usr/local/bin/docker-entrypoint.sh"]
 
 # Run mutation worker
 CMD ["node", "src/docker/MutationWorker.js"]

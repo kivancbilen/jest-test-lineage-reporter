@@ -1,0 +1,13 @@
+{
+  "totalMutations": 0,
+  "killedMutations": 0,
+  "survivedMutations": 0,
+  "timeoutMutations": 0,
+  "errorMutations": 0,
+  "mutationScore": 0,
+  "mutations": [],
+  "fileResults": {},
+  "workerResults": [],
+  "dockerEnabled": true,
+  "dockerWorkers": 2
+}

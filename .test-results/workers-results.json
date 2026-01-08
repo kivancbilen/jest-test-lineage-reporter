@@ -1,0 +1,64 @@
+{
+  "totalMutations": 0,
+  "killedMutations": 0,
+  "survivedMutations": 0,
+  "timeoutMutations": 0,
+  "errorMutations": 0,
+  "mutationScore": 0,
+  "fileResults": {
+    "/Users/kivancbilen/kivanc/jest-test-lineage-reporter/src/quality-example.ts": {
+      "totalMutations": 0,
+      "killedMutations": 0,
+      "survivedMutations": 0,
+      "timeoutMutations": 0,
+      "errorMutations": 0,
+      "lineResults": {
+        "5": {
+          "totalMutations": 0,
+          "killedMutations": 0,
+          "survivedMutations": 0,
+          "timeoutMutations": 0,
+          "errorMutations": 0,
+          "mutations": []
+        }
+      },
+      "mutations": []
+    },
+    "/Users/kivancbilen/kivanc/jest-test-lineage-reporter/src/weak-test-example.ts": {
+      "totalMutations": 0,
+      "killedMutations": 0,
+      "survivedMutations": 0,
+      "timeoutMutations": 0,
+      "errorMutations": 0,
+      "lineResults": {
+        "3": {
+          "totalMutations": 0,
+          "killedMutations": 0,
+          "survivedMutations": 0,
+          "timeoutMutations": 0,
+          "errorMutations": 0,
+          "mutations": []
+        }
+      },
+      "mutations": []
+    },
+    "/Users/kivancbilen/kivanc/jest-test-lineage-reporter/src/smelly-test-example.ts": {
+      "totalMutations": 0,
+      "killedMutations": 0,
+      "survivedMutations": 0,
+      "timeoutMutations": 0,
+      "errorMutations": 0,
+      "lineResults": {
+        "10": {
+          "totalMutations": 0,
+          "killedMutations": 0,
+          "survivedMutations": 0,
+          "timeoutMutations": 0,
+          "errorMutations": 0,
+          "mutations": []
+        }
+      },
+      "mutations": []
+    }
+  }
+}
