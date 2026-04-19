@@ -2,6 +2,8 @@
  * Jest setup file to enable precise per-test tracking
  */
 
+const logger = require("./logger");
+
 // Test Quality Analysis Functions
 function analyzeTestQuality(testFunction, testName) {
   const functionString = testFunction.toString();
@@ -18,40 +20,40 @@ function analyzeTestQuality(testFunction, testName) {
     codePatterns: [],
     dependencies: new Set(),
     isolationScore: 0,
-    testLength: functionString.split('\n').length,
-    setupTeardown: 0
+    testLength: functionString.split("\n").length,
+    setupTeardown: 0,
   };
 
   // Count assertions - more comprehensive patterns
   const assertionPatterns = [
-    /expect\(/g,                    // expect(value)
-    /\.toBe\(/g,                   // .toBe(value)
-    /\.toEqual\(/g,                // .toEqual(value)
-    /\.toMatch\(/g,                // .toMatch(pattern)
-    /\.toContain\(/g,              // .toContain(item)
-    /\.toThrow\(/g,                // .toThrow()
-    /\.toHaveLength\(/g,           // .toHaveLength(number)
-    /\.toBeGreaterThan\(/g,        // .toBeGreaterThan(number)
+    /expect\(/g, // expect(value)
+    /\.toBe\(/g, // .toBe(value)
+    /\.toEqual\(/g, // .toEqual(value)
+    /\.toMatch\(/g, // .toMatch(pattern)
+    /\.toContain\(/g, // .toContain(item)
+    /\.toThrow\(/g, // .toThrow()
+    /\.toHaveLength\(/g, // .toHaveLength(number)
+    /\.toBeGreaterThan\(/g, // .toBeGreaterThan(number)
     /\.toBeGreaterThanOrEqual\(/g, // .toBeGreaterThanOrEqual(number)
-    /\.toBeLessThan\(/g,           // .toBeLessThan(number)
-    /\.toBeLessThanOrEqual\(/g,    // .toBeLessThanOrEqual(number)
-    /\.toBeCloseTo\(/g,            // .toBeCloseTo(number)
-    /\.toHaveProperty\(/g,         // .toHaveProperty(key)
-    /\.toBeNull\(/g,               // .toBeNull()
-    /\.toBeUndefined\(/g,          // .toBeUndefined()
-    /\.toBeDefined\(/g,            // .toBeDefined()
-    /\.toBeTruthy\(/g,             // .toBeTruthy()
-    /\.toBeFalsy\(/g,              // .toBeFalsy()
-    /\.not\.toThrow\(/g,           // .not.toThrow()
-    /\.not\.toBe\(/g,              // .not.toBe()
-    /assert\(/g,                   // assert(condition)
-    /should\./g,                   // should.be.true
-    /\.to\./g,                     // chai assertions
-    /\.be\./g                      // chai assertions
+    /\.toBeLessThan\(/g, // .toBeLessThan(number)
+    /\.toBeLessThanOrEqual\(/g, // .toBeLessThanOrEqual(number)
+    /\.toBeCloseTo\(/g, // .toBeCloseTo(number)
+    /\.toHaveProperty\(/g, // .toHaveProperty(key)
+    /\.toBeNull\(/g, // .toBeNull()
+    /\.toBeUndefined\(/g, // .toBeUndefined()
+    /\.toBeDefined\(/g, // .toBeDefined()
+    /\.toBeTruthy\(/g, // .toBeTruthy()
+    /\.toBeFalsy\(/g, // .toBeFalsy()
+    /\.not\.toThrow\(/g, // .not.toThrow()
+    /\.not\.toBe\(/g, // .not.toBe()
+    /assert\(/g, // assert(condition)
+    /should\./g, // should.be.true
+    /\.to\./g, // chai assertions
+    /\.be\./g, // chai assertions
   ];
 
   let totalAssertions = 0;
-  assertionPatterns.forEach(pattern => {
+  assertionPatterns.forEach((pattern) => {
     const matches = functionString.match(pattern);
     if (matches) {
       totalAssertions += matches.length;
@@ -61,69 +63,105 @@ function analyzeTestQuality(testFunction, testName) {
 
   // Count async operations
   const asyncPatterns = [
-    /await\s+/g, /\.then\(/g, /\.catch\(/g, /Promise\./g, /async\s+/g,
-    /setTimeout\(/g, /setInterval\(/g, /requestAnimationFrame\(/g
+    /await\s+/g,
+    /\.then\(/g,
+    /\.catch\(/g,
+    /Promise\./g,
+    /async\s+/g,
+    /setTimeout\(/g,
+    /setInterval\(/g,
+    /requestAnimationFrame\(/g,
   ];
-  asyncPatterns.forEach(pattern => {
+  asyncPatterns.forEach((pattern) => {
     const matches = functionString.match(pattern);
     if (matches) qualityMetrics.asyncOperations += matches.length;
   });
 
   // Count mock usage
   const mockPatterns = [
-    /jest\.mock\(/g, /jest\.spyOn\(/g, /\.mockImplementation\(/g, /\.mockReturnValue\(/g,
-    /\.mockResolvedValue\(/g, /\.mockRejectedValue\(/g, /sinon\./g, /stub\(/g, /spy\(/g
+    /jest\.mock\(/g,
+    /jest\.spyOn\(/g,
+    /\.mockImplementation\(/g,
+    /\.mockReturnValue\(/g,
+    /\.mockResolvedValue\(/g,
+    /\.mockRejectedValue\(/g,
+    /sinon\./g,
+    /stub\(/g,
+    /spy\(/g,
   ];
-  mockPatterns.forEach(pattern => {
+  mockPatterns.forEach((pattern) => {
     const matches = functionString.match(pattern);
     if (matches) qualityMetrics.mockUsage += matches.length;
   });
 
   // Count error handling
   const errorPatterns = [
-    /try\s*\{/g, /catch\s*\(/g, /throw\s+/g, /toThrow\(/g, /toThrowError\(/g,
-    /\.rejects\./g, /\.resolves\./g
+    /try\s*\{/g,
+    /catch\s*\(/g,
+    /throw\s+/g,
+    /toThrow\(/g,
+    /toThrowError\(/g,
+    /\.rejects\./g,
+    /\.resolves\./g,
   ];
-  errorPatterns.forEach(pattern => {
+  errorPatterns.forEach((pattern) => {
     const matches = functionString.match(pattern);
     if (matches) qualityMetrics.errorHandling += matches.length;
   });
 
   // Detect edge cases
   const edgeCasePatterns = [
-    /null/g, /undefined/g, /empty/g, /zero/g, /negative/g, /boundary/g,
-    /edge/g, /limit/g, /max/g, /min/g, /invalid/g, /error/g
+    /null/g,
+    /undefined/g,
+    /empty/g,
+    /zero/g,
+    /negative/g,
+    /boundary/g,
+    /edge/g,
+    /limit/g,
+    /max/g,
+    /min/g,
+    /invalid/g,
+    /error/g,
   ];
-  edgeCasePatterns.forEach(pattern => {
+  edgeCasePatterns.forEach((pattern) => {
     const matches = functionString.match(pattern);
     if (matches) qualityMetrics.edgeCases += matches.length;
   });
 
   // Calculate complexity (cyclomatic complexity approximation)
   const complexityPatterns = [
-    /if\s*\(/g, /else/g, /for\s*\(/g, /while\s*\(/g, /switch\s*\(/g,
-    /case\s+/g, /catch\s*\(/g, /&&/g, /\|\|/g, /\?/g
+    /if\s*\(/g,
+    /else/g,
+    /for\s*\(/g,
+    /while\s*\(/g,
+    /switch\s*\(/g,
+    /case\s+/g,
+    /catch\s*\(/g,
+    /&&/g,
+    /\|\|/g,
+    /\?/g,
   ];
-  complexityPatterns.forEach(pattern => {
+  complexityPatterns.forEach((pattern) => {
     const matches = functionString.match(pattern);
     if (matches) qualityMetrics.complexity += matches.length;
   });
 
   // Detect test smells
   if (qualityMetrics.testLength > 50) {
-    qualityMetrics.testSmells.push('Long Test');
+    qualityMetrics.testSmells.push("Long Test");
   }
   if (qualityMetrics.assertions === 0) {
-    qualityMetrics.testSmells.push('No Assertions');
+    qualityMetrics.testSmells.push("No Assertions");
   }
   if (qualityMetrics.assertions > 10) {
-    qualityMetrics.testSmells.push('Too Many Assertions');
+    qualityMetrics.testSmells.push("Too Many Assertions");
   }
-  if (functionString.includes('sleep') || functionString.includes('wait')) {
-    qualityMetrics.testSmells.push('Sleep/Wait Usage');
+  if (functionString.includes("sleep") || functionString.includes("wait")) {
+    qualityMetrics.testSmells.push("Sleep/Wait Usage");
   }
   if (qualityMetrics.mockUsage > 5) {
-    qualityMetrics.testSmells.push('Excessive Mocking');
+    qualityMetrics.testSmells.push("Excessive Mocking");
   }
 
   // Calculate maintainability score (0-100)
@@ -152,10 +190,20 @@ function analyzeTestQuality(testFunction, testName) {
 }
 
 // Check if lineage tracking is enabled
-const isEnabled = process.env.JEST_LINEAGE_ENABLED !== 'false';
-const isTrackingEnabled = process.env.JEST_LINEAGE_TRACKING !== 'false';
-const isPerformanceEnabled = process.env.JEST_LINEAGE_PERFORMANCE !== 'false';
-const isQualityEnabled = process.env.JEST_LINEAGE_QUALITY !== 'false';
+const isEnabled = process.env.JEST_LINEAGE_ENABLED !== "false";
+const isTrackingEnabled = process.env.JEST_LINEAGE_TRACKING !== "false";
+const isPerformanceEnabled = process.env.JEST_LINEAGE_PERFORMANCE !== "false";
+const isQualityEnabled = process.env.JEST_LINEAGE_QUALITY !== "false";
+const memoryProfilingMode = process.env.JEST_LINEAGE_MEMORY_MODE || "basic";
+
+// Lazy-load V8 profiler only when needed
+let v8Profiler = null;
+function getV8Profiler() {
+  if (!v8Profiler) {
+    v8Profiler = require("./v8-memory-profiler");
+  }
+  return v8Profiler;
+}
 
 // Global tracker for test coverage
 global.__TEST_LINEAGE_TRACKER__ = {
@@ -169,8 +217,8 @@ global.__TEST_LINEAGE_TRACKER__ = {
     enabled: isEnabled,
     lineageTracking: isTrackingEnabled,
     performanceTracking: isPerformanceEnabled,
-    qualityTracking: isQualityEnabled
-  }
+    qualityTracking: isQualityEnabled,
+  },
 };
 
 // Store original test functions
@@ -186,9 +234,9 @@ function createTestWrapper(originalFn, testType) {
     }
 
     // Wrap the test function with tracking
-    const wrappedTestFn = async function(...args) {
+    const wrappedTestFn = async function (...args) {
       // Get the current test file path from Jest's context
-      let testFilePath = 'unknown';
+      let testFilePath = "unknown";
       try {
         // Method 1: Try expect.getState() - this is the most reliable method
         const expectState = expect.getState();
@@ -210,7 +258,7 @@ function createTestWrapper(originalFn, testType) {
             /at.*\/(src\/__tests__\/[^:]+\.test\.[jt]s):/,
             /at.*\/(src\/__tests__\/[^:]+\.spec\.[jt]s):/,
             /at.*\/(__tests__\/[^:]+\.test\.[jt]s):/,
-            /at.*\/(__tests__\/[^:]+\.spec\.[jt]s):/
+            /at.*\/(__tests__\/[^:]+\.spec\.[jt]s):/,
           ];
 
           for (const pattern of testFilePatterns) {
@@ -222,7 +270,7 @@ function createTestWrapper(originalFn, testType) {
           }
         }
       } catch (e) {
-        testFilePath = 'unknown';
+        testFilePath = "unknown";
       }
 
       // Start tracking for this specific test
@@ -246,54 +294,90 @@ function createTestWrapper(originalFn, testType) {
           dependencies: new Set(),
           isolationScore: 0,
           testLength: 0,
-          setupTeardown: 0
+          setupTeardown: 0,
         },
-        startMetrics: capturePerformanceMetrics()
+        startMetrics: capturePerformanceMetrics(),
       };
       global.__TEST_LINEAGE_TRACKER__.isTracking = true;
 
+      // Start V8 allocation sampling if enabled
+      if (
+        memoryProfilingMode === "v8-sampling" &&
+        global.__TEST_LINEAGE_TRACKER__.isPerformanceTracking
+      ) {
+        getV8Profiler().startSampling();
+      }
+
       // Analyze test quality
-      if (typeof testFn === 'function') {
-        global.__TEST_LINEAGE_TRACKER__.currentTest.qualityMetrics = analyzeTestQuality(testFn, testName);
+      if (typeof testFn === "function") {
+        global.__TEST_LINEAGE_TRACKER__.currentTest.qualityMetrics =
+          analyzeTestQuality(testFn, testName);
       }
 
       try {
         // Execute the actual test
         const result = await testFn.apply(this, args);
-        
+
+        // Stop V8 sampling and merge allocations into coverage data
+        if (
+          memoryProfilingMode === "v8-sampling" &&
+          global.__TEST_LINEAGE_TRACKER__.isPerformanceTracking
+        ) {
+          const profiler = getV8Profiler();
+          const profile = await profiler.stopSampling();
+          if (profile) {
+            const allocations = profiler.getAllAllocations(profile);
+            mergeV8AllocationsIntoCoverage(
+              global.__TEST_LINEAGE_TRACKER__.currentTest.coverage,
+              allocations,
+            );
+          }
+        }
+
         // Store the coverage data for this test
         const testId = `${testName}::${Date.now()}`;
         const testData = {
           name: testName,
           type: testType,
           testFile: global.__TEST_LINEAGE_TRACKER__.currentTest.testFile,
-          duration: Date.now() - global.__TEST_LINEAGE_TRACKER__.currentTest.startTime,
-          coverage: new Map(global.__TEST_LINEAGE_TRACKER__.currentTest.coverage),
-          qualityMetrics: global.__TEST_LINEAGE_TRACKER__.currentTest.qualityMetrics
+          duration:
+            Date.now() - global.__TEST_LINEAGE_TRACKER__.currentTest.startTime,
+          coverage: new Map(
+            global.__TEST_LINEAGE_TRACKER__.currentTest.coverage,
+          ),
+          qualityMetrics:
+            global.__TEST_LINEAGE_TRACKER__.currentTest.qualityMetrics,
         };
 
         global.__TEST_LINEAGE_TRACKER__.testCoverage.set(testId, testData);
 
         // Skip storing persistent data and writing files during mutation testing
-        if (process.env.JEST_LINEAGE_MUTATION !== 'true') {
+        if (process.env.JEST_LINEAGE_MUTATION !== "true") {
           // Also store in a more persistent way for the reporter
           if (!global.__LINEAGE_PERSISTENT_DATA__) {
             // Initialize array - load existing tests from file if merging is enabled
             // This ensures data persists across test files running in separate workers
-            const shouldMerge = process.env.JEST_LINEAGE_MERGE !== 'false';
+            const shouldMerge = process.env.JEST_LINEAGE_MERGE !== "false";
             if (shouldMerge) {
-              const fs = require('fs');
-              const path = require('path');
-              const filePath = path.join(process.cwd(), '.jest-lineage-data.json');
+              const fs = require("fs");
+              const path = require("path");
+              const filePath = path.join(
+                process.cwd(),
+                ".jest-lineage-data.json",
+              );
 
               if (fs.existsSync(filePath)) {
                 try {
-                  const existingData = JSON.parse(fs.readFileSync(filePath, 'utf8'));
+                  const existingData = JSON.parse(
+                    fs.readFileSync(filePath, "utf8"),
+                  );
                   // Convert coverage objects back to Maps
-                  global.__LINEAGE_PERSISTENT_DATA__ = existingData.tests.map(test => ({
-                    ...test,
-                    coverage: new Map(Object.entries(test.coverage || {}))
-                  }));
+                  global.__LINEAGE_PERSISTENT_DATA__ = existingData.tests.map(
+                    (test) => ({
+                      ...test,
+                      coverage: new Map(Object.entries(test.coverage || {})),
+                    }),
+                  );
                 } catch (e) {
                   global.__LINEAGE_PERSISTENT_DATA__ = [];
                 }
@@ -312,16 +396,40 @@ function createTestWrapper(originalFn, testType) {
 
         return result;
       } catch (error) {
+        // Stop V8 sampling on failure too
+        if (
+          memoryProfilingMode === "v8-sampling" &&
+          global.__TEST_LINEAGE_TRACKER__.isPerformanceTracking
+        ) {
+          try {
+            const profiler = getV8Profiler();
+            const profile = await profiler.stopSampling();
+            if (profile && global.__TEST_LINEAGE_TRACKER__.currentTest) {
+              const allocations = profiler.getAllAllocations(profile);
+              mergeV8AllocationsIntoCoverage(
+                global.__TEST_LINEAGE_TRACKER__.currentTest.coverage,
+                allocations,
+              );
+            }
+          } catch (_) {
+            // Don't let profiler errors mask the test error
+          }
+        }
+
         // Still store coverage data even if test fails
         const testId = `${testName}::${Date.now()}::FAILED`;
         global.__TEST_LINEAGE_TRACKER__.testCoverage.set(testId, {
           name: testName,
           type: testType,
           testFile: global.__TEST_LINEAGE_TRACKER__.currentTest.testFile,
-          duration: Date.now() - global.__TEST_LINEAGE_TRACKER__.currentTest.startTime,
-          coverage: new Map(global.__TEST_LINEAGE_TRACKER__.currentTest.coverage),
-          qualityMetrics: global.__TEST_LINEAGE_TRACKER__.currentTest.qualityMetrics,
-          failed: true
+          duration:
+            Date.now() - global.__TEST_LINEAGE_TRACKER__.currentTest.startTime,
+          coverage: new Map(
+            global.__TEST_LINEAGE_TRACKER__.currentTest.coverage,
+          ),
+          qualityMetrics:
+            global.__TEST_LINEAGE_TRACKER__.currentTest.qualityMetrics,
+          failed: true,
         });
         throw error;
       } finally {
@@ -341,14 +449,14 @@ const sourceDirectoryCache = new Map();
 
 // Find the project root by looking for package.json
 function findProjectRoot(startPath) {
-  const path = require('path');
-  const fs = require('fs');
+  const path = require("path");
+  const fs = require("fs");
 
   let currentDir = startPath;
   const root = path.parse(currentDir).root;
 
   while (currentDir !== root) {
-    const packageJsonPath = path.join(currentDir, 'package.json');
+    const packageJsonPath = path.join(currentDir, "package.json");
     if (fs.existsSync(packageJsonPath)) {
       return currentDir;
     }
@@ -361,8 +469,8 @@ function findProjectRoot(startPath) {
 
 // Smart auto-detection of source file paths using package.json as root
 function resolveSourceFilePath(relativeFilePath) {
-  const path = require('path');
-  const fs = require('fs');
+  const path = require("path");
+  const fs = require("fs");
 
   // Check cache first
   const cacheKey = relativeFilePath;
@@ -400,9 +508,9 @@ function resolveSourceFilePath(relativeFilePath) {
 
   // Strategy 4: Fallback to common patterns from project root
   const commonPatterns = [
-    path.resolve(projectRoot, 'src', filename),
-    path.resolve(projectRoot, 'lib', filename),
-    path.resolve(projectRoot, 'source', filename),
+    path.resolve(projectRoot, "src", filename),
+    path.resolve(projectRoot, "lib", filename),
+    path.resolve(projectRoot, "source", filename),
   ];
 
   for (const fallbackPath of commonPatterns) {
@@ -419,8 +527,8 @@ function resolveSourceFilePath(relativeFilePath) {
 
 // Auto-discover source directories by scanning the project structure
 function discoverSourceDirectories(projectRoot, targetFilename) {
-  const path = require('path');
-  const fs = require('fs');
+  const path = require("path");
+  const fs = require("fs");
 
   const discoveredPaths = [];
   const maxDepth = 3; // Limit search depth for performance
@@ -467,7 +575,7 @@ function discoverSourceDirectories(projectRoot, targetFilename) {
     }
 
     // Prefer common source directory names
-    const sourcePreference = ['src', 'lib', 'source', 'app'];
+    const sourcePreference = ["src", "lib", "source", "app"];
     const aScore = getSourceDirectoryScore(a, sourcePreference);
     const bScore = getSourceDirectoryScore(b, sourcePreference);
 
@@ -478,28 +586,28 @@ function discoverSourceDirectories(projectRoot, targetFilename) {
 // Check if a directory should be skipped during auto-discovery
 function shouldSkipDirectory(dirName) {
   const skipPatterns = [
-    'node_modules',
-    '.git',
-    '.next',
-    '.nuxt',
-    'dist',
-    'build',
-    'coverage',
-    '.nyc_output',
-    'tmp',
-    'temp',
-    '.cache',
-    '.vscode',
-    '.idea',
-    '__pycache__',
-    '.pytest_cache',
-    'vendor',
-    'target',
-    'bin',
-    'obj'
+    "node_modules",
+    ".git",
+    ".next",
+    ".nuxt",
+    "dist",
+    "build",
+    "coverage",
+    ".nyc_output",
+    "tmp",
+    "temp",
+    ".cache",
+    ".vscode",
+    ".idea",
+    "__pycache__",
+    ".pytest_cache",
+    "vendor",
+    "target",
+    "bin",
+    "obj",
   ];
 
-  return skipPatterns.includes(dirName) || dirName.startsWith('.');
+  return skipPatterns.includes(dirName) || dirName.startsWith(".");
 }
 
 // Score source directories by preference
@@ -527,8 +635,91 @@ function capturePerformanceMetrics() {
     wallTime: Number(hrTime) / 1000000, // Convert to microseconds
     cpuTime: (cpuUsage.user + cpuUsage.system) / 1000, // Convert to microseconds
     memoryUsage: memUsage.heapUsed,
-    timestamp: Date.now()
+    timestamp: Date.now(),
   };
+}
+
+/**
+ * Merge V8 allocation profile data into the per-line coverage map.
+ * For each tracked line that has a matching allocation entry, replace
+ * the noisy process.memoryUsage() delta with the actual bytes allocated.
+ */
+function mergeV8AllocationsIntoCoverage(coverageMap, allocations) {
+  if (!coverageMap || !allocations || allocations.size === 0) return;
+
+  const isDebug = process.env.JEST_LINEAGE_DEBUG === "true";
+
+  // Babel instrumentation shifts line numbers in transpiled code, so V8's
+  // line numbers won't match our source line numbers. Instead, aggregate
+  // allocations per-file and distribute to tracked lines by execution count.
+
+  // Step 1: Sum allocations per file (from V8 profile)
+  const fileAllocations = new Map();
+  for (const [allocKey, bytes] of allocations) {
+    // allocKey = "/path/to/file.ts:lineNumber"
+    const lastColon = allocKey.lastIndexOf(":");
+    const filePath = allocKey.substring(0, lastColon);
+    fileAllocations.set(filePath, (fileAllocations.get(filePath) || 0) + bytes);
+  }
+
+  // Step 2: Find coverage perf entries grouped by file
+  const perfEntriesByFile = new Map();
+  for (const key of coverageMap.keys()) {
+    if (!key.endsWith(":performance")) continue;
+    // key = "/path/to/file.ts:12:performance"
+    const withoutSuffix = key.slice(0, -":performance".length);
+    const lastColon = withoutSuffix.lastIndexOf(":");
+    const filePath = withoutSuffix.substring(0, lastColon);
+    if (!perfEntriesByFile.has(filePath)) {
+      perfEntriesByFile.set(filePath, []);
+    }
+    perfEntriesByFile.get(filePath).push(key);
+  }
+
+  // Step 3: For each file with V8 allocations, distribute to tracked lines
+  let matched = 0;
+  for (const [filePath, totalBytes] of fileAllocations) {
+    // Try exact path match, then basename match
+    let perfKeys = perfEntriesByFile.get(filePath);
+    if (!perfKeys) {
+      const baseName = filePath.split("/").pop();
+      for (const [covPath, keys] of perfEntriesByFile) {
+        if (covPath.endsWith("/" + baseName) || covPath === baseName) {
+          perfKeys = keys;
+          break;
+        }
+      }
+    }
+    if (!perfKeys || perfKeys.length === 0) continue;
+
+    // Sum total executions across tracked lines for proportional distribution
+    let totalExecs = 0;
+    const lineExecs = [];
+    for (const perfKey of perfKeys) {
+      const perfData = coverageMap.get(perfKey);
+      const execs = perfData ? perfData.totalExecutions || 1 : 1;
+      totalExecs += execs;
+      lineExecs.push({ perfKey, execs });
+    }
+
+    // Distribute bytes proportionally by execution count
+    for (const { perfKey, execs } of lineExecs) {
+      const perfData = coverageMap.get(perfKey);
+      if (!perfData) continue;
+      const share = Math.round((execs / totalExecs) * totalBytes);
+      perfData.totalMemoryDelta = share;
+      perfData.v8Sampled = true;
+      perfData.memoryLeaks = share > 50 * 1024 ? 1 : 0;
+      perfData.gcPressure = share > 0 && share < 10 * 1024 ? 1 : 0;
+      matched++;
+    }
+  }
+
+  if (isDebug) {
+    console.log(
+      `[V8 Memory] Matched ${fileAllocations.size} files, updated ${matched} line entries`,
+    );
+  }
 }
 
 // Estimate CPU cycles based on timing and system characteristics
@@ -538,7 +729,9 @@ function estimateCpuCycles(cpuTimeMicros, wallTimeMicros) {
 
   // Calculate cycles: CPU time (seconds) * frequency (cycles/second)
   const cpuTimeSeconds = cpuTimeMicros / 1000000;
-  const estimatedCycles = Math.round(cpuTimeSeconds * estimatedCpuFrequencyGHz * 1000000000);
+  const estimatedCycles = Math.round(
+    cpuTimeSeconds * estimatedCpuFrequencyGHz * 1000000000,
+  );
 
   return estimatedCycles;
 }
@@ -547,7 +740,7 @@ function estimateCpuCycles(cpuTimeMicros, wallTimeMicros) {
 function getCpuFrequencyEstimate() {
   // Try to get CPU info from Node.js (if available)
   try {
-    const os = require('os');
+    const os = require("os");
     const cpus = os.cpus();
     if (cpus && cpus.length > 0 && cpus[0].speed) {
       return cpus[0].speed / 1000; // Convert MHz to GHz
@@ -574,8 +767,8 @@ function profileLineExecution(filePath, lineNumber, executionCallback) {
       memoryDelta: endMetrics.memoryUsage - startMetrics.memoryUsage,
       cpuCycles: estimateCpuCycles(
         endMetrics.cpuTime - startMetrics.cpuTime,
-        endMetrics.wallTime - startMetrics.wallTime
-      )
+        endMetrics.wallTime - startMetrics.wallTime,
+      ),
     };
 
     return { result, performanceProfile };
@@ -587,9 +780,9 @@ function profileLineExecution(filePath, lineNumber, executionCallback) {
       memoryDelta: endMetrics.memoryUsage - startMetrics.memoryUsage,
       cpuCycles: estimateCpuCycles(
         endMetrics.cpuTime - startMetrics.cpuTime,
-        endMetrics.wallTime - startMetrics.wallTime
+        endMetrics.wallTime - startMetrics.wallTime,
       ),
-      error: error.message
+      error: error.message,
     };
 
     throw { originalError: error, performanceProfile };
@@ -610,31 +803,38 @@ function calculateCallDepth() {
     }
 
     // Filter out internal tracking functions and Jest infrastructure
-    const relevantFrames = stack.filter(frame => {
+    const relevantFrames = stack.filter((frame) => {
       const fileName = frame.getFileName();
-      const functionName = frame.getFunctionName() || '';
+      const functionName = frame.getFunctionName() || "";
 
       // Skip internal tracking functions
-      if (functionName.includes('__TRACK_LINE_EXECUTION__') ||
-          functionName.includes('calculateCallDepth') ||
-          functionName.includes('resolveSourceFilePath')) {
+      if (
+        functionName.includes("__TRACK_LINE_EXECUTION__") ||
+        functionName.includes("calculateCallDepth") ||
+        functionName.includes("resolveSourceFilePath")
+      ) {
         return false;
       }
 
       // Skip Jest internal functions
-      if (fileName && (
-          fileName.includes('jest-runner') ||
-          fileName.includes('jest-runtime') ||
-          fileName.includes('jest-environment') ||
-          fileName.includes('testSetup.js') ||
-          fileName.includes('node_modules/jest') ||
-          fileName.includes('babel-plugin-lineage-tracker')
-      )) {
+      if (
+        fileName &&
+        (fileName.includes("jest-runner") ||
+          fileName.includes("jest-runtime") ||
+          fileName.includes("jest-environment") ||
+          fileName.includes("testSetup.js") ||
+          fileName.includes("node_modules/jest") ||
+          fileName.includes("babel-plugin-lineage-tracker"))
+      ) {
         return false;
       }
 
       // Skip Node.js internal functions
-      if (!fileName || fileName.startsWith('node:') || fileName.includes('internal/')) {
+      if (
+        !fileName ||
+        fileName.startsWith("node:") ||
+        fileName.includes("internal/")
+      ) {
         return false;
       }
 
@@ -649,7 +849,6 @@ function calculateCallDepth() {
 
     // Cap the depth at a reasonable maximum
     return Math.min(depth, 10);
-
   } catch (error) {
     // Fallback to depth 1 if stack trace analysis fails
     return 1;
@@ -659,24 +858,24 @@ function calculateCallDepth() {
 // Method to write tracking data to file
 function writeTrackingDataToFile() {
   // Skip writing during mutation testing to avoid creating reports
-  if (process.env.JEST_LINEAGE_MUTATION === 'true') {
+  if (process.env.JEST_LINEAGE_MUTATION === "true") {
     return;
   }
 
-  const fs = require('fs');
-  const path = require('path');
+  const fs = require("fs");
+  const path = require("path");
 
   try {
-    const filePath = path.join(process.cwd(), '.jest-lineage-data.json');
+    const filePath = path.join(process.cwd(), ".jest-lineage-data.json");
 
     // Check if we should merge with existing data (default: true for multiple test files)
     // Set JEST_LINEAGE_MERGE=false to disable merging and recreate from scratch
-    const shouldMerge = process.env.JEST_LINEAGE_MERGE !== 'false';
+    const shouldMerge = process.env.JEST_LINEAGE_MERGE !== "false";
 
     let existingData = { timestamp: Date.now(), tests: [] };
     if (shouldMerge && fs.existsSync(filePath)) {
       try {
-        existingData = JSON.parse(fs.readFileSync(filePath, 'utf8'));
+        existingData = JSON.parse(fs.readFileSync(filePath, "utf8"));
       } catch (e) {
         // If file is corrupted, start fresh
         existingData = { timestamp: Date.now(), tests: [] };
@@ -691,18 +890,23 @@ function writeTrackingDataToFile() {
     }
 
     // Check if any test has actual coverage data
-    const hasAnyCoverage = tests.some(test => test.coverage && test.coverage.size > 0);
+    const hasAnyCoverage = tests.some(
+      (test) => test.coverage && test.coverage.size > 0,
+    );
     if (!hasAnyCoverage) {
       return;
     }
 
     // Convert Map objects to plain objects for JSON serialization
-    const serializedTests = tests.map(testData => ({
+    const serializedTests = tests.map((testData) => ({
       name: testData.name,
       type: testData.type,
       testFile: testData.testFile,
       duration: testData.duration,
-      coverage: testData.coverage instanceof Map ? Object.fromEntries(testData.coverage) : testData.coverage,
+      coverage:
+        testData.coverage instanceof Map
+          ? Object.fromEntries(testData.coverage)
+          : testData.coverage,
       qualityMetrics: testData.qualityMetrics || {
         assertions: 0,
         asyncOperations: 0,
@@ -715,69 +919,75 @@ function writeTrackingDataToFile() {
         testSmells: [],
         codePatterns: [],
         isolationScore: 100,
-        testLength: 0
-      }
+        testLength: 0,
+      },
     }));
 
     let dataToWrite;
     if (shouldMerge) {
       // Merge with existing data (replace tests with same name to get latest coverage data)
-      const existingTestsByName = new Map(existingData.tests.map(t => [t.name, t]));
+      const existingTestsByName = new Map(
+        existingData.tests.map((t) => [t.name, t]),
+      );
 
       // Add/replace tests with new data
-      serializedTests.forEach(newTest => {
+      serializedTests.forEach((newTest) => {
         existingTestsByName.set(newTest.name, newTest);
       });
 
       dataToWrite = {
         timestamp: Date.now(),
-        tests: Array.from(existingTestsByName.values())
+        tests: Array.from(existingTestsByName.values()),
       };
     } else {
       // Recreate from scratch (default behavior)
       dataToWrite = {
         timestamp: Date.now(),
-        tests: serializedTests
+        tests: serializedTests,
       };
     }
 
     fs.writeFileSync(filePath, JSON.stringify(dataToWrite, null, 2));
   } catch (error) {
-    console.warn('Warning: Could not write tracking data to file:', error.message);
+    logger.warn(
+      "Warning: Could not write tracking data to file:",
+      error.message,
+    );
   }
 }
 
 // Replace global test functions with our wrapped versions
-global.it = createTestWrapper(originalIt, 'it');
-global.test = createTestWrapper(originalTest, 'test');
+global.it = createTestWrapper(originalIt, "it");
+global.test = createTestWrapper(originalTest, "test");
 
 // Copy over any additional properties from original functions
 if (originalIt) {
-  Object.keys(originalIt).forEach(key => {
-    if (typeof originalIt[key] === 'function') {
+  Object.keys(originalIt).forEach((key) => {
+    if (typeof originalIt[key] === "function") {
       global.it[key] = originalIt[key];
     }
   });
 }
 
 if (originalTest) {
-  Object.keys(originalTest).forEach(key => {
-    if (typeof originalTest[key] === 'function') {
+  Object.keys(originalTest).forEach((key) => {
+    if (typeof originalTest[key] === "function") {
       global.test[key] = originalTest[key];
     }
   });
 }
 
 // Function for line execution tracking with call depth and performance analysis
-global.__TRACK_LINE_EXECUTION__ = function(filePath, lineNumber, nodeType) {
+global.__TRACK_LINE_EXECUTION__ = function (filePath, lineNumber, nodeType) {
   // Skip tracking during mutation testing to avoid conflicts
-  if (process.env.JEST_LINEAGE_MUTATION === 'true') {
+  if (process.env.JEST_LINEAGE_MUTATION === "true") {
     return;
   }
 
-  if (global.__TEST_LINEAGE_TRACKER__.isTracking &&
-      global.__TEST_LINEAGE_TRACKER__.currentTest) {
-
+  if (
+    global.__TEST_LINEAGE_TRACKER__.isTracking &&
+    global.__TEST_LINEAGE_TRACKER__.currentTest
+  ) {
     // High-resolution performance measurement
     const performanceStart = capturePerformanceMetrics();
 
@@ -789,42 +999,54 @@ global.__TRACK_LINE_EXECUTION__ = function(filePath, lineNumber, nodeType) {
     const callDepth = calculateCallDepth();
 
     // Store execution with depth information
-    const currentCount = global.__TEST_LINEAGE_TRACKER__.currentTest.coverage.get(key) || 0;
-    global.__TEST_LINEAGE_TRACKER__.currentTest.coverage.set(key, currentCount + 1);
+    const currentCount =
+      global.__TEST_LINEAGE_TRACKER__.currentTest.coverage.get(key) || 0;
+    global.__TEST_LINEAGE_TRACKER__.currentTest.coverage.set(
+      key,
+      currentCount + 1,
+    );
 
     // Store depth information for this execution
     const depthKey = `${key}:depth`;
-    const depthData = global.__TEST_LINEAGE_TRACKER__.currentTest.coverage.get(depthKey) || {};
+    const depthData =
+      global.__TEST_LINEAGE_TRACKER__.currentTest.coverage.get(depthKey) || {};
     depthData[callDepth] = (depthData[callDepth] || 0) + 1;
-    global.__TEST_LINEAGE_TRACKER__.currentTest.coverage.set(depthKey, depthData);
+    global.__TEST_LINEAGE_TRACKER__.currentTest.coverage.set(
+      depthKey,
+      depthData,
+    );
 
     // Store performance metrics for this execution
     const performanceEnd = capturePerformanceMetrics();
     const performanceKey = `${key}:performance`;
-    const performanceData = global.__TEST_LINEAGE_TRACKER__.currentTest.coverage.get(performanceKey) || {
-      totalExecutions: 0,
-      totalCpuTime: 0,
-      totalWallTime: 0,
-      totalMemoryDelta: 0,
-      minExecutionTime: Infinity,
-      maxExecutionTime: 0,
-      executionTimes: [],
-      cpuCycles: [],
-      memorySnapshots: [],
-      performanceVariance: 0,
-      performanceStdDev: 0,
-      performanceP95: 0,
-      performanceP99: 0,
-      slowExecutions: 0,
-      fastExecutions: 0,
-      memoryLeaks: 0,
-      gcPressure: 0
-    };
+    const performanceData =
+      global.__TEST_LINEAGE_TRACKER__.currentTest.coverage.get(
+        performanceKey,
+      ) || {
+        totalExecutions: 0,
+        totalCpuTime: 0,
+        totalWallTime: 0,
+        totalMemoryDelta: 0,
+        minExecutionTime: Infinity,
+        maxExecutionTime: 0,
+        executionTimes: [],
+        cpuCycles: [],
+        memorySnapshots: [],
+        performanceVariance: 0,
+        performanceStdDev: 0,
+        performanceP95: 0,
+        performanceP99: 0,
+        slowExecutions: 0,
+        fastExecutions: 0,
+        memoryLeaks: 0,
+        gcPressure: 0,
+      };
 
     // Calculate execution metrics
     const wallTime = performanceEnd.wallTime - performanceStart.wallTime;
     const cpuTime = performanceEnd.cpuTime - performanceStart.cpuTime;
-    const memoryDelta = performanceEnd.memoryUsage - performanceStart.memoryUsage;
+    const memoryDelta =
+      performanceEnd.memoryUsage - performanceStart.memoryUsage;
     const cpuCycles = estimateCpuCycles(cpuTime, wallTime);
 
     // Update performance data
@@ -832,8 +1054,14 @@ global.__TRACK_LINE_EXECUTION__ = function(filePath, lineNumber, nodeType) {
     performanceData.totalCpuTime += cpuTime;
     performanceData.totalWallTime += wallTime;
     performanceData.totalMemoryDelta += memoryDelta;
-    performanceData.minExecutionTime = Math.min(performanceData.minExecutionTime, wallTime);
-    performanceData.maxExecutionTime = Math.max(performanceData.maxExecutionTime, wallTime);
+    performanceData.minExecutionTime = Math.min(
+      performanceData.minExecutionTime,
+      wallTime,
+    );
+    performanceData.maxExecutionTime = Math.max(
+      performanceData.maxExecutionTime,
+      wallTime,
+    );
 
     // Store recent execution times (keep last 100 for analysis)
     performanceData.executionTimes.push(wallTime);
@@ -841,24 +1069,29 @@ global.__TRACK_LINE_EXECUTION__ = function(filePath, lineNumber, nodeType) {
     performanceData.memorySnapshots.push({
       timestamp: performanceEnd.timestamp,
       heapUsed: performanceEnd.memoryUsage,
-      delta: memoryDelta
+      delta: memoryDelta,
     });
 
     // Performance classification
-    const avgTime = performanceData.totalWallTime / Math.max(1, performanceData.totalExecutions);
+    const avgTime =
+      performanceData.totalWallTime /
+      Math.max(1, performanceData.totalExecutions);
     if (wallTime > avgTime * 2) {
       performanceData.slowExecutions++;
     } else if (wallTime < avgTime * 0.5) {
       performanceData.fastExecutions++;
     }
 
-    // Memory leak detection - very sensitive threshold for testing
-    if (Math.abs(memoryDelta) > 50 * 1024) { // > 50KB allocation (very sensitive)
+    // Memory leak detection — only flag positive deltas (actual growth).
+    // Negative deltas mean GC freed memory, which is the opposite of a leak.
+    if (memoryDelta > 50 * 1024) {
+      // > 50KB heap growth during a single line execution
       performanceData.memoryLeaks++;
     }
 
     // GC pressure detection (frequent small allocations)
-    if (memoryDelta > 0 && memoryDelta < 10 * 1024) { // < 10KB but > 0
+    if (memoryDelta > 0 && memoryDelta < 10 * 1024) {
+      // < 10KB but > 0
       performanceData.gcPressure++;
     }
 
@@ -881,12 +1114,16 @@ global.__TRACK_LINE_EXECUTION__ = function(filePath, lineNumber, nodeType) {
 
       // Calculate variance and standard deviation
       const mean = times.reduce((sum, t) => sum + t, 0) / times.length;
-      const variance = times.reduce((sum, t) => sum + Math.pow(t - mean, 2), 0) / times.length;
+      const variance =
+        times.reduce((sum, t) => sum + Math.pow(t - mean, 2), 0) / times.length;
       performanceData.performanceVariance = variance;
       performanceData.performanceStdDev = Math.sqrt(variance);
     }
 
-    global.__TEST_LINEAGE_TRACKER__.currentTest.coverage.set(performanceKey, performanceData);
+    global.__TEST_LINEAGE_TRACKER__.currentTest.coverage.set(
+      performanceKey,
+      performanceData,
+    );
 
     // Store additional metadata about the node type
     const metaKey = `${key}:meta`;
@@ -895,10 +1132,11 @@ global.__TRACK_LINE_EXECUTION__ = function(filePath, lineNumber, nodeType) {
         nodeType: nodeType,
         firstExecution: Date.now(),
         minDepth: callDepth,
-        maxDepth: callDepth
+        maxDepth: callDepth,
       });
     } else {
-      const meta = global.__TEST_LINEAGE_TRACKER__.currentTest.coverage.get(metaKey);
+      const meta =
+        global.__TEST_LINEAGE_TRACKER__.currentTest.coverage.get(metaKey);
       meta.minDepth = Math.min(meta.minDepth, callDepth);
       meta.maxDepth = Math.max(meta.maxDepth, callDepth);
     }
@@ -906,33 +1144,37 @@ global.__TRACK_LINE_EXECUTION__ = function(filePath, lineNumber, nodeType) {
 };
 
 // Export results for the reporter
-global.__GET_LINEAGE_RESULTS__ = function() {
+global.__GET_LINEAGE_RESULTS__ = function () {
   // Return empty results during mutation testing to prevent report generation
-  if (process.env.JEST_LINEAGE_MUTATION === 'true') {
+  if (process.env.JEST_LINEAGE_MUTATION === "true") {
     return {};
   }
 
   const results = {};
 
   // Use persistent data if available, fallback to test coverage map
-  const dataSource = global.__LINEAGE_PERSISTENT_DATA__ || Array.from(global.__TEST_LINEAGE_TRACKER__.testCoverage.values());
+  const dataSource =
+    global.__LINEAGE_PERSISTENT_DATA__ ||
+    Array.from(global.__TEST_LINEAGE_TRACKER__.testCoverage.values());
 
-  console.log(`🔍 Getting lineage results from ${dataSource.length} tests`);
+  logger.debug(`Getting lineage results from ${dataSource.length} tests`);
 
   dataSource.forEach((testData) => {
     testData.coverage.forEach((count, key) => {
       // Skip metadata entries
-      if (key.includes(':meta')) {
+      if (key.includes(":meta")) {
         return;
       }
 
-      const [filePath, lineNumber] = key.split(':');
+      const [filePath, lineNumber] = key.split(":");
 
       // Skip test files and node_modules
-      if (filePath.includes('__tests__') ||
-          filePath.includes('.test.') ||
-          filePath.includes('.spec.') ||
-          filePath.includes('node_modules')) {
+      if (
+        filePath.includes("__tests__") ||
+        filePath.includes(".test.") ||
+        filePath.includes(".spec.") ||
+        filePath.includes("node_modules")
+      ) {
         return;
       }
 
@@ -946,21 +1188,23 @@ global.__GET_LINEAGE_RESULTS__ = function() {
 
       results[filePath][lineNumber].push({
         testName: testData.name,
-        testFile: 'current-test-file', // Will be updated by reporter
+        testFile: "current-test-file", // Will be updated by reporter
         executionCount: count,
         duration: testData.duration,
-        type: 'precise',
-        failed: testData.failed || false
+        type: "precise",
+        failed: testData.failed || false,
       });
 
-      console.log(`✅ Added precise data: ${filePath}:${lineNumber} -> ${testData.name} (${count} executions)`);
+      logger.debug(
+        `Added precise data: ${filePath}:${lineNumber} -> ${testData.name} (${count} executions)`,
+      );
     });
   });
 
-  console.log(`🔍 Final results: ${Object.keys(results).length} files with precise data`);
+  logger.debug(
+    `Final results: ${Object.keys(results).length} files with precise data`,
+  );
   return results;
 };
 
-
-
-console.log('🎯 Test lineage tracking setup completed');
+logger.debug("Test lineage tracking setup completed");

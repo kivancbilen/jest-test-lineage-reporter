@@ -2,6 +2,8 @@
  * Configuration for Jest Test Lineage Reporter
  */
 
+const logger = require("./logger");
+
 const DEFAULT_CONFIG = {
   // Feature toggles
   enabled: true, // Master switch to enable/disable entire system
@@ -10,21 +12,21 @@ const DEFAULT_CONFIG = {
   enableQualityAnalysis: true, // Enable test quality scoring
 
   // Output settings
-  outputFile: 'test-lineage-report.html',
+  outputFile: "test-lineage-report.html",
   enableConsoleOutput: true,
   enableDebugLogging: false,
-  
+
   // Performance thresholds
   memoryLeakThreshold: 50 * 1024, // 50KB - allocations above this trigger memory leak alerts
   gcPressureThreshold: 5, // Number of small allocations that trigger GC pressure alerts
   slowExecutionThreshold: 2.0, // Multiplier for average execution time to trigger slow alerts
-  
+
   // Quality thresholds
   qualityThreshold: 60, // Minimum quality score (0-100)
   reliabilityThreshold: 60, // Minimum reliability score (0-100)
   maintainabilityThreshold: 60, // Minimum maintainability score (0-100)
   maxTestSmells: 2, // Maximum number of test smells before flagging
-  
+
   // Test quality scoring weights
   qualityWeights: {
     assertions: 5, // Points per assertion (up to 30 points)
@@ -32,15 +34,16 @@ const DEFAULT_CONFIG = {
     edgeCases: 3, // Points per edge case test (up to 15 points)
     testSmellPenalty: 5, // Points deducted per test smell
     complexityPenalty: 2, // Points deducted per complexity point
-    lengthPenalty: 0.5 // Points deducted per line over 50
+    lengthPenalty: 0.5, // Points deducted per line over 50
   },
-  
+
   // Performance tracking
   enableCpuCycleTracking: true,
   enableMemoryTracking: true,
   enableCallDepthTracking: true,
   maxCallDepthTracking: 10, // Maximum call depth to track
-  
+  memoryProfilingMode: "basic", // 'basic' = process.memoryUsage() snapshots, 'v8-sampling' = V8 allocation sampling (more accurate, ~5-10% slower)
+
   // HTML report settings
   enableInteractiveFeatures: true,
   enablePerformanceDashboard: true,
@@ -50,44 +53,39 @@ const DEFAULT_CONFIG = {
   // Mutation testing settings
   enableMutationTesting: false, // Enable mutation testing mode
   mutationOperators: {
-    arithmetic: true,     // +, -, *, /, %
-    comparison: true,     // ==, !=, <, >, <=, >=
-    logical: true,        // &&, ||, !
-    conditional: true,    // if conditions, ternary operators
-    assignment: true,     // =, +=, -=, etc.
-    literals: true,       // numbers, booleans, strings
-    returns: true,        // return statements
-    increments: true      // ++, --
+    arithmetic: true, // +, -, *, /, %
+    comparison: true, // ==, !=, <, >, <=, >=
+    logical: true, // &&, ||, !
+    conditional: true, // if conditions, ternary operators
+    assignment: true, // =, +=, -=, etc.
+    literals: true, // numbers, booleans, strings
+    returns: true, // return statements
+    increments: true, // ++, --
   },
-  mutationThreshold: 80,  // Minimum mutation score (% of mutations killed)
-  mutationTimeout: 5000,  // Timeout per mutation test in ms
+  mutationThreshold: 80, // Minimum mutation score (% of mutations killed)
+  mutationTimeout: 5000, // Timeout per mutation test in ms
   maxMutationsPerLine: 3, // Maximum mutations to generate per line
   skipEquivalentMutants: true, // Skip mutations that don't change behavior
 
   // Debug options
-  debugMutations: false,  // Create mutation files for debugging instead of overwriting originals
-  debugMutationDir: './mutations-debug', // Directory to store debug mutation files
+  debugMutations: false, // Create mutation files for debugging instead of overwriting originals
+  debugMutationDir: "./mutations-debug", // Directory to store debug mutation files
 
   // Docker options
-  enableDocker: false,  // Use Docker containers for parallel mutation testing
-  dockerWorkers: 0,  // Number of Docker containers (0 = auto-detect CPU cores - 1)
-  dockerImage: 'jest-lineage-mutation-worker',  // Docker image name
-  dockerImageTag: 'latest',  // Docker image tag
+  enableDocker: false, // Use Docker containers for parallel mutation testing
+  dockerWorkers: 0, // Number of Docker containers (0 = auto-detect CPU cores - 1)
+  dockerImage: "jest-lineage-mutation-worker", // Docker image name
+  dockerImageTag: "latest", // Docker image tag
 
   // File filtering
-  includePatterns: [
-    '**/*.js',
-    '**/*.ts',
-    '**/*.jsx',
-    '**/*.tsx'
-  ],
+  includePatterns: ["**/*.js", "**/*.ts", "**/*.jsx", "**/*.tsx"],
   excludePatterns: [
-    '**/node_modules/**',
-    '**/dist/**',
-    '**/build/**',
-    '**/*.min.js',
-    '**/*.bundle.js'
-  ]
+    "**/node_modules/**",
+    "**/dist/**",
+    "**/build/**",
+    "**/*.min.js",
+    "**/*.bundle.js",
+  ],
 };
 
 /**
@@ -97,40 +95,59 @@ const DEFAULT_CONFIG = {
  */
 function validateAndMergeConfig(userConfig = {}) {
   const config = { ...DEFAULT_CONFIG, ...userConfig };
-  
+
   // Validate numeric thresholds
-  if (typeof config.memoryLeakThreshold !== 'number' || config.memoryLeakThreshold < 0) {
-    console.warn('Invalid memoryLeakThreshold, using default:', DEFAULT_CONFIG.memoryLeakThreshold);
+  if (
+    typeof config.memoryLeakThreshold !== "number" ||
+    config.memoryLeakThreshold < 0
+  ) {
+    logger.warn(
+      "Invalid memoryLeakThreshold, using default:",
+      DEFAULT_CONFIG.memoryLeakThreshold,
+    );
     config.memoryLeakThreshold = DEFAULT_CONFIG.memoryLeakThreshold;
   }
-  
-  if (typeof config.gcPressureThreshold !== 'number' || config.gcPressureThreshold < 1) {
-    console.warn('Invalid gcPressureThreshold, using default:', DEFAULT_CONFIG.gcPressureThreshold);
+
+  if (
+    typeof config.gcPressureThreshold !== "number" ||
+    config.gcPressureThreshold < 1
+  ) {
+    logger.warn(
+      "Invalid gcPressureThreshold, using default:",
+      DEFAULT_CONFIG.gcPressureThreshold,
+    );
     config.gcPressureThreshold = DEFAULT_CONFIG.gcPressureThreshold;
   }
-  
-  if (typeof config.qualityThreshold !== 'number' || config.qualityThreshold < 0 || config.qualityThreshold > 100) {
-    console.warn('Invalid qualityThreshold, using default:', DEFAULT_CONFIG.qualityThreshold);
+
+  if (
+    typeof config.qualityThreshold !== "number" ||
+    config.qualityThreshold < 0 ||
+    config.qualityThreshold > 100
+  ) {
+    logger.warn(
+      "Invalid qualityThreshold, using default:",
+      DEFAULT_CONFIG.qualityThreshold,
+    );
     config.qualityThreshold = DEFAULT_CONFIG.qualityThreshold;
   }
-  
+
   // Validate file patterns
   if (!Array.isArray(config.includePatterns)) {
-    console.warn('Invalid includePatterns, using default');
+    logger.warn("Invalid includePatterns, using default");
     config.includePatterns = DEFAULT_CONFIG.includePatterns;
   }
-  
+
   if (!Array.isArray(config.excludePatterns)) {
-    console.warn('Invalid excludePatterns, using default');
+    logger.warn("Invalid excludePatterns, using default");
     config.excludePatterns = DEFAULT_CONFIG.excludePatterns;
   }
-  
+
   // Validate quality weights
-  if (typeof config.qualityWeights !== 'object') {
-    console.warn('Invalid qualityWeights, using default');
+  if (typeof config.qualityWeights !== "object") {
+    logger.warn("Invalid qualityWeights, using default");
     config.qualityWeights = DEFAULT_CONFIG.qualityWeights;
   }
-  
+
   return config;
 }
 
@@ -141,33 +158,45 @@ function validateAndMergeConfig(userConfig = {}) {
 function getConfigFromEnv() {
   return {
     // Feature toggles
-    enabled: process.env.JEST_LINEAGE_ENABLED !== 'false', // Default enabled, set to 'false' to disable
-    enableLineageTracking: process.env.JEST_LINEAGE_TRACKING !== 'false',
-    enablePerformanceTracking: process.env.JEST_LINEAGE_PERFORMANCE !== 'false',
-    enableQualityAnalysis: process.env.JEST_LINEAGE_QUALITY !== 'false',
-    enableMutationTesting: process.env.JEST_LINEAGE_MUTATION ? process.env.JEST_LINEAGE_MUTATION === 'true' : undefined,
+    enabled: process.env.JEST_LINEAGE_ENABLED !== "false", // Default enabled, set to 'false' to disable
+    enableLineageTracking: process.env.JEST_LINEAGE_TRACKING !== "false",
+    enablePerformanceTracking: process.env.JEST_LINEAGE_PERFORMANCE !== "false",
+    enableQualityAnalysis: process.env.JEST_LINEAGE_QUALITY !== "false",
+    enableMutationTesting: process.env.JEST_LINEAGE_MUTATION
+      ? process.env.JEST_LINEAGE_MUTATION === "true"
+      : undefined,
 
     // Output settings
     outputFile: process.env.JEST_LINEAGE_OUTPUT_FILE,
-    enableDebugLogging: process.env.JEST_LINEAGE_DEBUG === 'true',
+    enableDebugLogging: process.env.JEST_LINEAGE_DEBUG === "true",
 
     // Thresholds
-    memoryLeakThreshold: process.env.JEST_LINEAGE_MEMORY_THRESHOLD ?
-      parseInt(process.env.JEST_LINEAGE_MEMORY_THRESHOLD) : undefined,
-    gcPressureThreshold: process.env.JEST_LINEAGE_GC_THRESHOLD ?
-      parseInt(process.env.JEST_LINEAGE_GC_THRESHOLD) : undefined,
-    qualityThreshold: process.env.JEST_LINEAGE_QUALITY_THRESHOLD ?
-      parseInt(process.env.JEST_LINEAGE_QUALITY_THRESHOLD) : undefined,
+    memoryLeakThreshold: process.env.JEST_LINEAGE_MEMORY_THRESHOLD
+      ? parseInt(process.env.JEST_LINEAGE_MEMORY_THRESHOLD)
+      : undefined,
+    gcPressureThreshold: process.env.JEST_LINEAGE_GC_THRESHOLD
+      ? parseInt(process.env.JEST_LINEAGE_GC_THRESHOLD)
+      : undefined,
+    qualityThreshold: process.env.JEST_LINEAGE_QUALITY_THRESHOLD
+      ? parseInt(process.env.JEST_LINEAGE_QUALITY_THRESHOLD)
+      : undefined,
+
+    // Memory profiling mode
+    memoryProfilingMode: process.env.JEST_LINEAGE_MEMORY_MODE || undefined,
 
     // Mutation testing settings
-    debugMutations: process.env.JEST_LINEAGE_DEBUG_MUTATIONS ? process.env.JEST_LINEAGE_DEBUG_MUTATIONS === 'true' : undefined,
+    debugMutations: process.env.JEST_LINEAGE_DEBUG_MUTATIONS
+      ? process.env.JEST_LINEAGE_DEBUG_MUTATIONS === "true"
+      : undefined,
     debugMutationDir: process.env.JEST_LINEAGE_DEBUG_MUTATION_DIR,
 
     // Mutation testing thresholds
-    mutationThreshold: process.env.JEST_LINEAGE_MUTATION_THRESHOLD ?
-      parseInt(process.env.JEST_LINEAGE_MUTATION_THRESHOLD) : undefined,
-    mutationTimeout: process.env.JEST_LINEAGE_MUTATION_TIMEOUT ?
-      parseInt(process.env.JEST_LINEAGE_MUTATION_TIMEOUT) : undefined
+    mutationThreshold: process.env.JEST_LINEAGE_MUTATION_THRESHOLD
+      ? parseInt(process.env.JEST_LINEAGE_MUTATION_THRESHOLD)
+      : undefined,
+    mutationTimeout: process.env.JEST_LINEAGE_MUTATION_TIMEOUT
+      ? parseInt(process.env.JEST_LINEAGE_MUTATION_TIMEOUT)
+      : undefined,
   };
 }
 
@@ -181,7 +210,7 @@ function loadConfig(userConfig = {}) {
 
   // Only merge environment config values that are actually set (not undefined)
   const filteredEnvConfig = {};
-  Object.keys(envConfig).forEach(key => {
+  Object.keys(envConfig).forEach((key) => {
     if (envConfig[key] !== undefined) {
       filteredEnvConfig[key] = envConfig[key];
     }
@@ -195,5 +224,5 @@ module.exports = {
   DEFAULT_CONFIG,
   validateAndMergeConfig,
   getConfigFromEnv,
-  loadConfig
+  loadConfig,
 };

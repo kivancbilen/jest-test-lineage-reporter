@@ -3,18 +3,19 @@
  * Initialize jest-test-lineage-reporter in a project
  */
 
-const fs = require('fs');
-const path = require('path');
-const { success, error, info, warning } = require('../utils/output-formatter');
+const fs = require("fs");
+const path = require("path");
+const { success, error, info, warning } = require("../utils/output-formatter");
+const logger = require("../../logger");
 
 async function initCommand(options) {
   try {
     const cwd = process.cwd();
-    const jestConfigPath = path.join(cwd, 'jest.config.js');
-    const babelConfigPath = path.join(cwd, 'babel.config.js');
-    const packageJsonPath = path.join(cwd, 'package.json');
+    const jestConfigPath = path.join(cwd, "jest.config.js");
+    const babelConfigPath = path.join(cwd, "babel.config.js");
+    const packageJsonPath = path.join(cwd, "package.json");
 
-    console.log('\n🚀 Initializing jest-test-lineage-reporter...\n');
+    logger.info("\nInitializing jest-test-lineage-reporter...\n");
 
     // Check if package.json exists
     if (!fs.existsSync(packageJsonPath)) {
@@ -26,35 +27,44 @@ async function initCommand(options) {
     const isLocalInstall = isInstalledLocally(cwd);
 
     if (!isLocalInstall) {
-      warning('jest-test-lineage-reporter is installed globally.');
-      warning('For best results, install it locally in your project:\n');
-      console.log('   npm install --save-dev jest-test-lineage-reporter\n');
+      warning("jest-test-lineage-reporter is installed globally.");
+      warning("For best results, install it locally in your project:\n");
+      logger.info("   npm install --save-dev jest-test-lineage-reporter\n");
 
       if (!options.force) {
-        error('Global installation detected. Use --force to continue with absolute paths.');
+        error(
+          "Global installation detected. Use --force to continue with absolute paths.",
+        );
         process.exit(1);
       }
     }
 
     // Read package.json to check dependencies
-    const packageJson = JSON.parse(fs.readFileSync(packageJsonPath, 'utf8'));
+    const packageJson = JSON.parse(fs.readFileSync(packageJsonPath, "utf8"));
     const allDeps = {
       ...(packageJson.dependencies || {}),
       ...(packageJson.devDependencies || {}),
     };
 
     // Check for required dependencies
-    const requiredDeps = ['jest', 'babel-jest', '@babel/core', '@babel/preset-env'];
-    const missingDeps = requiredDeps.filter(dep => !allDeps[dep]);
+    const requiredDeps = [
+      "jest",
+      "babel-jest",
+      "@babel/core",
+      "@babel/preset-env",
+    ];
+    const missingDeps = requiredDeps.filter((dep) => !allDeps[dep]);
 
     if (missingDeps.length > 0) {
-      warning('Missing required dependencies:');
-      missingDeps.forEach(dep => console.log(`  - ${dep}`));
-      console.log('\n💡 Install them with:');
-      console.log(`   npm install --save-dev ${missingDeps.join(' ')}\n`);
+      warning("Missing required dependencies:");
+      missingDeps.forEach((dep) => logger.info(`  - ${dep}`));
+      logger.info("\nInstall them with:");
+      logger.info(`   npm install --save-dev ${missingDeps.join(" ")}\n`);
 
       if (!options.force) {
-        error('Please install missing dependencies first, or use --force to continue anyway.');
+        error(
+          "Please install missing dependencies first, or use --force to continue anyway.",
+        );
         process.exit(1);
       }
     }
@@ -64,11 +74,11 @@ async function initCommand(options) {
     if (fs.existsSync(jestConfigPath)) {
       if (!options.force) {
         warning(`jest.config.js already exists. Use --force to overwrite.`);
-        info('Please manually add the following to your jest.config.js:');
+        info("Please manually add the following to your jest.config.js:");
         const setupPath = isLocalInstall
-          ? 'jest-test-lineage-reporter/src/testSetup.js'
-          : getGlobalPackagePath('testSetup.js');
-        console.log(`
+          ? "jest-test-lineage-reporter/src/testSetup.js"
+          : getGlobalPackagePath("testSetup.js");
+        logger.info(`
   setupFilesAfterEnv: ['${setupPath}'],
 
   reporters: [
@@ -100,11 +110,13 @@ async function initCommand(options) {
     if (fs.existsSync(babelConfigPath)) {
       if (!options.force) {
         warning(`babel.config.js already exists. Use --force to overwrite.`);
-        info('Please manually add the lineage tracker plugin to your babel.config.js:');
+        info(
+          "Please manually add the lineage tracker plugin to your babel.config.js:",
+        );
         const pluginPath = isLocalInstall
-          ? 'jest-test-lineage-reporter/src/babel-plugin-lineage-tracker.js'
-          : getGlobalPackagePath('babel-plugin-lineage-tracker.js');
-        console.log(`
+          ? "jest-test-lineage-reporter/src/babel-plugin-lineage-tracker.js"
+          : getGlobalPackagePath("babel-plugin-lineage-tracker.js");
+        logger.info(`
   plugins: [
     '${pluginPath}',
   ],
@@ -119,39 +131,40 @@ async function initCommand(options) {
     }
 
     // Summary
-    console.log('\n' + '═'.repeat(50));
+    logger.info("\n" + "=".repeat(50));
     if (jestConfigCreated && babelConfigCreated) {
-      success('Configuration complete! ✨\n');
-      console.log('✅ Created jest.config.js');
-      console.log('✅ Created babel.config.js\n');
+      success("Configuration complete!\n");
+      logger.info("Created jest.config.js");
+      logger.info("Created babel.config.js\n");
     } else if (!jestConfigCreated && !babelConfigCreated) {
-      info('Configuration files already exist.');
-      info('Use --force to overwrite, or manually update the files.\n');
+      info("Configuration files already exist.");
+      info("Use --force to overwrite, or manually update the files.\n");
     } else {
-      info('Partial configuration completed.');
-      if (jestConfigCreated) console.log('✅ Created jest.config.js');
-      if (babelConfigCreated) console.log('✅ Created babel.config.js');
-      console.log('');
+      info("Partial configuration completed.");
+      if (jestConfigCreated) logger.info("Created jest.config.js");
+      if (babelConfigCreated) logger.info("Created babel.config.js");
+      logger.info("");
     }
 
     // Show next steps
-    console.log('📋 Next steps:\n');
+    logger.info("Next steps:\n");
     if (missingDeps.length > 0) {
-      console.log('1. Install missing dependencies:');
-      console.log(`   npm install --save-dev ${missingDeps.join(' ')}\n`);
+      logger.info("1. Install missing dependencies:");
+      logger.info(`   npm install --save-dev ${missingDeps.join(" ")}\n`);
     }
-    console.log(`${missingDeps.length > 0 ? '2' : '1'}. Run your tests with lineage tracking:`);
-    console.log('   npx jest-lineage test\n');
-    console.log(`${missingDeps.length > 0 ? '3' : '2'}. Query coverage data:`);
-    console.log('   npx jest-lineage query src/yourfile.js\n');
-    console.log(`${missingDeps.length > 0 ? '4' : '3'}. Generate HTML report:`);
-    console.log('   npx jest-lineage report --open\n');
-    console.log('═'.repeat(50) + '\n');
-
+    logger.info(
+      `${missingDeps.length > 0 ? "2" : "1"}. Run your tests with lineage tracking:`,
+    );
+    logger.info("   npx jest-lineage test\n");
+    logger.info(`${missingDeps.length > 0 ? "3" : "2"}. Query coverage data:`);
+    logger.info("   npx jest-lineage query src/yourfile.js\n");
+    logger.info(`${missingDeps.length > 0 ? "4" : "3"}. Generate HTML report:`);
+    logger.info("   npx jest-lineage report --open\n");
+    logger.info("=".repeat(50) + "\n");
   } catch (err) {
     error(`Failed to initialize: ${err.message}`);
     if (options.verbose) {
-      console.error(err.stack);
+      logger.error(err.stack);
     }
     process.exit(1);
   }
@@ -160,8 +173,8 @@ async function initCommand(options) {
 function createJestConfig(filePath, options, isLocalInstall) {
   const isTypeScript = options.typescript || hasTypeScriptFiles();
   const setupPath = isLocalInstall
-    ? 'jest-test-lineage-reporter/src/testSetup.js'
-    : getGlobalPackagePath('testSetup.js');
+    ? "jest-test-lineage-reporter/src/testSetup.js"
+    : getGlobalPackagePath("testSetup.js");
 
   const config = `module.exports = {
   testEnvironment: 'node',
@@ -184,34 +197,38 @@ function createJestConfig(filePath, options, isLocalInstall) {
   // Enable coverage
   collectCoverage: true,
   collectCoverageFrom: [
-    'src/**/*.{js${isTypeScript ? ',ts' : ''}}',
-    '!src/**/*.test.{js${isTypeScript ? ',ts' : ''}}',
+    'src/**/*.{js${isTypeScript ? ",ts" : ""}}',
+    '!src/**/*.test.{js${isTypeScript ? ",ts" : ""}}',
     '!src/**/*.d.ts',
   ],
 
   // Use babel-jest for transformation
   transform: {
-    '^.+\\\\.(js|jsx${isTypeScript ? '|ts|tsx' : ''})$': 'babel-jest',
+    '^.+\\\\.(js|jsx${isTypeScript ? "|ts|tsx" : ""})$': 'babel-jest',
   },
 
   // File extensions
-  moduleFileExtensions: ['js', 'jsx'${isTypeScript ? ", 'ts', 'tsx'" : ''}, 'json'],
+  moduleFileExtensions: ['js', 'jsx'${isTypeScript ? ", 'ts', 'tsx'" : ""}, 'json'],
 };
 `;
 
-  fs.writeFileSync(filePath, config, 'utf8');
+  fs.writeFileSync(filePath, config, "utf8");
 }
 
 function createBabelConfig(filePath, options, isLocalInstall) {
   const isTypeScript = options.typescript || hasTypeScriptFiles();
   const pluginPath = isLocalInstall
-    ? 'jest-test-lineage-reporter/src/babel-plugin-lineage-tracker.js'
-    : getGlobalPackagePath('babel-plugin-lineage-tracker.js');
+    ? "jest-test-lineage-reporter/src/babel-plugin-lineage-tracker.js"
+    : getGlobalPackagePath("babel-plugin-lineage-tracker.js");
 
   const config = `module.exports = {
   presets: [
-    ['@babel/preset-env', { targets: { node: 'current' } }],${isTypeScript ? `
-    '@babel/preset-typescript',` : ''}
+    ['@babel/preset-env', { targets: { node: 'current' } }],${
+      isTypeScript
+        ? `
+    '@babel/preset-typescript',`
+        : ""
+    }
   ],
   plugins: [
     // Required: Lineage tracker plugin for instrumentation
@@ -220,32 +237,36 @@ function createBabelConfig(filePath, options, isLocalInstall) {
 };
 `;
 
-  fs.writeFileSync(filePath, config, 'utf8');
+  fs.writeFileSync(filePath, config, "utf8");
 }
 
 function hasTypeScriptFiles() {
   const cwd = process.cwd();
-  const srcDir = path.join(cwd, 'src');
+  const srcDir = path.join(cwd, "src");
 
   if (!fs.existsSync(srcDir)) return false;
 
   try {
     const files = fs.readdirSync(srcDir);
-    return files.some(file => file.endsWith('.ts') || file.endsWith('.tsx'));
+    return files.some((file) => file.endsWith(".ts") || file.endsWith(".tsx"));
   } catch {
     return false;
   }
 }
 
 function isInstalledLocally(cwd) {
-  const localPath = path.join(cwd, 'node_modules', 'jest-test-lineage-reporter');
+  const localPath = path.join(
+    cwd,
+    "node_modules",
+    "jest-test-lineage-reporter",
+  );
   return fs.existsSync(localPath);
 }
 
 function getGlobalPackagePath(filename) {
   // Get the directory where this script is running from
   const scriptDir = path.dirname(path.dirname(path.dirname(__dirname)));
-  const srcPath = path.join(scriptDir, 'src', filename);
+  const srcPath = path.join(scriptDir, "src", filename);
 
   // Return absolute path
   return srcPath;

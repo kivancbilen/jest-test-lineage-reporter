@@ -7,6 +7,7 @@ const fs = require("fs");
 const path = require("path");
 const { spawn } = require("child_process");
 const { createMutationPlugin } = require("./babel-plugin-mutation-tester");
+const logger = require("./logger");
 
 class MutationTester {
   constructor(config = {}) {
@@ -33,7 +34,7 @@ class MutationTester {
     const debugDir = this.config.debugMutationDir || "./mutations-debug";
     if (!fs.existsSync(debugDir)) {
       fs.mkdirSync(debugDir, { recursive: true });
-      console.log(`📁 Created debug mutation directory: ${debugDir}`);
+      logger.debug(`📁 Created debug mutation directory: ${debugDir}`);
     } else {
       // Clean existing debug files
       const files = fs.readdirSync(debugDir);
@@ -42,7 +43,7 @@ class MutationTester {
           fs.unlinkSync(path.join(debugDir, file));
         }
       });
-      console.log(`🧹 Cleaned existing debug mutation files in: ${debugDir}`);
+      logger.debug(`🧹 Cleaned existing debug mutation files in: ${debugDir}`);
     }
   }
 
@@ -52,23 +53,23 @@ class MutationTester {
   setupCleanupHandlers() {
     // Handle process interruption (Ctrl+C)
     process.on("SIGINT", () => {
-      console.log("\n🛑 Mutation testing interrupted. Cleaning up...");
+      logger.info("\n🛑 Mutation testing interrupted. Cleaning up...");
       this.emergencyCleanup();
       process.exit(1);
     });
 
     // Handle process termination
     process.on("SIGTERM", () => {
-      console.log("\n🛑 Mutation testing terminated. Cleaning up...");
+      logger.info("\n🛑 Mutation testing terminated. Cleaning up...");
       this.emergencyCleanup();
       process.exit(1);
     });
 
     // Handle uncaught exceptions
     process.on("uncaughtException", (error) => {
-      console.error(
+      logger.error(
         "\n❌ Uncaught exception during mutation testing:",
-        error.message
+        error.message,
       );
       this.emergencyCleanup();
       process.exit(1);
@@ -84,15 +85,15 @@ class MutationTester {
       if (fs.existsSync(lineageFile)) {
         const data = JSON.parse(fs.readFileSync(lineageFile, "utf8"));
         this.lineageData = this.processLineageData(data);
-        console.log(
+        logger.info(
           `📊 Loaded lineage data for ${
             Object.keys(this.lineageData).length
-          } files`
+          } files`,
         );
         return true;
       }
     } catch (error) {
-      console.error("❌ Failed to load lineage data:", error.message);
+      logger.error("❌ Failed to load lineage data:", error.message);
     }
     return false;
   }
@@ -102,8 +103,8 @@ class MutationTester {
    */
   setLineageData(lineageData) {
     this.lineageData = lineageData;
-    console.log(
-      `📊 Set lineage data for ${Object.keys(this.lineageData).length} files`
+    logger.info(
+      `📊 Set lineage data for ${Object.keys(this.lineageData).length} files`,
     );
     return true;
   }
@@ -115,17 +116,17 @@ class MutationTester {
     const processed = {};
 
     if (rawData.tests) {
-      console.log(
-        `🔍 Processing ${rawData.tests.length} tests for mutation testing...`
+      logger.debug(
+        `🔍 Processing ${rawData.tests.length} tests for mutation testing...`,
       );
 
       rawData.tests.forEach((test, testIndex) => {
         if (test.coverage) {
           const coverageKeys = Object.keys(test.coverage);
-          console.log(
+          logger.debug(
             `  Test ${testIndex + 1}: "${test.name}" has ${
               coverageKeys.length
-            } coverage entries`
+            } coverage entries`,
           );
 
           coverageKeys.forEach((lineKey) => {
@@ -134,12 +135,11 @@ class MutationTester {
 
             // Skip metadata entries (depth, performance, meta) - only process basic line coverage
             if (!lineNumber || suffixes.length > 0) {
-              // console.log(`    Skipping metadata entry: ${lineKey}`);
               return;
             }
 
-            console.log(
-              `    Processing coverage: ${lineKey} = ${test.coverage[lineKey]}`
+            logger.debug(
+              `    Processing coverage: ${lineKey} = ${test.coverage[lineKey]}`,
             );
 
             if (!processed[filePath]) {
@@ -158,19 +158,19 @@ class MutationTester {
             });
           });
         } else {
-          console.log(
-            `  Test ${testIndex + 1}: "${test.name}" has no coverage data`
+          logger.debug(
+            `  Test ${testIndex + 1}: "${test.name}" has no coverage data`,
           );
         }
       });
     }
 
-    console.log(
-      `🎯 Processed lineage data for ${Object.keys(processed).length} files:`
+    logger.info(
+      `🎯 Processed lineage data for ${Object.keys(processed).length} files:`,
     );
     Object.keys(processed).forEach((filePath) => {
       const lineCount = Object.keys(processed[filePath]).length;
-      console.log(`  ${filePath}: ${lineCount} lines`);
+      logger.debug(`  ${filePath}: ${lineCount} lines`);
     });
 
     return processed;
@@ -181,11 +181,11 @@ class MutationTester {
    */
   async runMutationTesting() {
     if (!this.lineageData) {
-      console.error("❌ No lineage data available. Run normal tests first.");
+      logger.error("❌ No lineage data available. Run normal tests first.");
       return false;
     }
 
-    console.log("🧬 Starting mutation testing...");
+    logger.info("🧬 Starting mutation testing...");
 
     // Calculate total mutations for progress tracking
     const totalFiles = Object.keys(this.lineageData).length;
@@ -194,19 +194,19 @@ class MutationTester {
       for (const [lineNumber, tests] of Object.entries(lines)) {
         const sourceCode = this.getSourceCodeLine(
           filePath,
-          parseInt(lineNumber)
+          parseInt(lineNumber),
         );
         const mutationTypes = this.getPossibleMutationTypes(
           sourceCode,
           filePath,
-          parseInt(lineNumber)
+          parseInt(lineNumber),
         );
         totalMutationsCount += mutationTypes.length;
       }
     }
 
-    console.log(
-      `📊 Planning to test ${totalMutationsCount} mutations across ${totalFiles} files`
+    logger.info(
+      `📊 Planning to test ${totalMutationsCount} mutations across ${totalFiles} files`,
     );
 
     // Check if Docker mode is enabled
@@ -230,15 +230,18 @@ class MutationTester {
 
     if (shouldParallelize) {
       // Parallel execution - process multiple files concurrently
-      const os = require('os');
-      const actualWorkers = workers === 0 ? Math.max(1, os.cpus().length - 1) : workers;
-      console.log(`\n⚡ Running mutations in parallel with ${actualWorkers} workers\n`);
+      const os = require("os");
+      const actualWorkers =
+        workers === 0 ? Math.max(1, os.cpus().length - 1) : workers;
+      logger.info(
+        `\n⚡ Running mutations in parallel with ${actualWorkers} workers\n`,
+      );
 
       const fileEntries = Object.entries(this.lineageData);
       const filePromises = fileEntries.map(async ([filePath, lines], index) => {
         const workerId = (index % actualWorkers) + 1;
-        console.log(
-          `\n🔬 [Worker ${workerId}] Testing mutations in ${filePath} (${index + 1}/${totalFiles})...`
+        logger.info(
+          `\n🔬 [Worker ${workerId}] Testing mutations in ${filePath} (${index + 1}/${totalFiles})...`,
         );
 
         const fileResults = await this.testFileLines(
@@ -246,7 +249,7 @@ class MutationTester {
           lines,
           0, // Start from 0 for each file in parallel mode
           totalMutationsCount,
-          workerId
+          workerId,
         );
 
         // Log file completion summary
@@ -254,11 +257,12 @@ class MutationTester {
         const fileScore =
           fileResults.totalMutations > 0
             ? Math.round(
-                (fileResults.killedMutations / fileResults.totalMutations) * 100
+                (fileResults.killedMutations / fileResults.totalMutations) *
+                  100,
               )
             : 0;
-        console.log(
-          `✅ [Worker ${(index % actualWorkers) + 1}] ${fileName}: ${fileResults.totalMutations} mutations, ${fileResults.killedMutations} killed, ${fileResults.survivedMutations} survived (${fileScore}% score)`
+        logger.info(
+          `✅ [Worker ${(index % actualWorkers) + 1}] ${fileName}: ${fileResults.totalMutations} mutations, ${fileResults.killedMutations} killed, ${fileResults.survivedMutations} survived (${fileScore}% score)`,
         );
 
         return { filePath, fileResults };
@@ -287,15 +291,15 @@ class MutationTester {
 
       for (const [filePath, lines] of Object.entries(this.lineageData)) {
         currentFileIndex++;
-        console.log(
-          `\n🔬 Testing mutations in ${filePath} (${currentFileIndex}/${totalFiles})...`
+        logger.info(
+          `\n🔬 Testing mutations in ${filePath} (${currentFileIndex}/${totalFiles})...`,
         );
 
         const fileResults = await this.testFileLines(
           filePath,
           lines,
           currentMutationIndex,
-          totalMutationsCount
+          totalMutationsCount,
         );
         results.fileResults[filePath] = fileResults;
 
@@ -312,11 +316,12 @@ class MutationTester {
         const fileScore =
           fileResults.totalMutations > 0
             ? Math.round(
-                (fileResults.killedMutations / fileResults.totalMutations) * 100
+                (fileResults.killedMutations / fileResults.totalMutations) *
+                  100,
               )
             : 0;
-        console.log(
-          `✅ ${fileName}: ${fileResults.totalMutations} mutations, ${fileResults.killedMutations} killed, ${fileResults.survivedMutations} survived (${fileScore}% score)`
+        logger.info(
+          `✅ ${fileName}: ${fileResults.totalMutations} mutations, ${fileResults.killedMutations} killed, ${fileResults.survivedMutations} survived (${fileScore}% score)`,
         );
       }
     }
@@ -336,11 +341,11 @@ class MutationTester {
    * Run mutation testing using Docker containers
    */
   async runDockerMutationTesting() {
-    console.log("🐳 Running mutation testing in Docker mode...");
+    logger.info("🐳 Running mutation testing in Docker mode...");
 
     try {
-      const DockerCoordinator = require('./docker/DockerCoordinator');
-      const path = require('path');
+      const DockerCoordinator = require("./docker/DockerCoordinator");
+      const path = require("path");
 
       // Prepare mutations list
       const mutations = [];
@@ -357,32 +362,32 @@ class MutationTester {
 
         for (const [lineNumber, tests] of Object.entries(lines)) {
           // Convert test file paths to relative as well
-          const relativeTests = tests.map(test => ({
+          const relativeTests = tests.map((test) => ({
             ...test,
-            testFile: path.relative(projectPath, test.testFile)
+            testFile: path.relative(projectPath, test.testFile),
           }));
 
           relativeLineageData[relativePath][lineNumber] = relativeTests;
 
           const sourceCode = this.getSourceCodeLine(
             filePath,
-            parseInt(lineNumber)
+            parseInt(lineNumber),
           );
           const mutationTypes = this.getPossibleMutationTypes(
             sourceCode,
             filePath,
-            parseInt(lineNumber)
+            parseInt(lineNumber),
           );
 
           // Add each mutation type to the list
-          mutationTypes.forEach(mutationType => {
+          mutationTypes.forEach((mutationType) => {
             mutationIndex++;
             mutations.push({
-              filePath: relativePath,  // Use relative path for Docker
+              filePath: relativePath, // Use relative path for Docker
               lineNumber: parseInt(lineNumber),
               mutationType,
               tests: relativeTests,
-              index: mutationIndex
+              index: mutationIndex,
             });
           });
         }
@@ -391,19 +396,19 @@ class MutationTester {
       // Create Docker coordinator
       const coordinator = new DockerCoordinator({
         ...this.config,
-        projectPath
+        projectPath,
       });
 
       // Run mutations in Docker containers with relative paths
       const results = await coordinator.runMutationTesting(
         relativeLineageData,
-        mutations
+        mutations,
       );
 
       this.printMutationSummary(results);
       return results;
     } catch (error) {
-      console.error("❌ Docker mutation testing failed:", error.message);
+      logger.error("❌ Docker mutation testing failed:", error.message);
       throw error;
     }
   }
@@ -411,7 +416,13 @@ class MutationTester {
   /**
    * Test mutations for all lines in a specific file
    */
-  async testFileLines(filePath, lines, startMutationIndex, totalMutations, workerId = null) {
+  async testFileLines(
+    filePath,
+    lines,
+    startMutationIndex,
+    totalMutations,
+    workerId = null,
+  ) {
     const fileResults = {
       totalMutations: 0,
       killedMutations: 0,
@@ -431,7 +442,7 @@ class MutationTester {
         tests,
         currentMutationIndex,
         totalMutations,
-        workerId
+        workerId,
       );
       fileResults.lineResults[lineNumber] = lineResults;
 
@@ -459,7 +470,7 @@ class MutationTester {
     tests,
     startMutationIndex,
     totalMutations,
-    workerId = null
+    workerId = null,
   ) {
     const lineResults = {
       totalMutations: 0,
@@ -475,7 +486,7 @@ class MutationTester {
     const mutationTypes = this.getPossibleMutationTypes(
       sourceCode,
       filePath,
-      lineNumber
+      lineNumber,
     );
 
     let currentMutationIndex = startMutationIndex;
@@ -490,7 +501,7 @@ class MutationTester {
         tests,
         currentMutationIndex,
         totalMutations,
-        workerId
+        workerId,
       );
 
       // Skip mutations that couldn't be applied (null result)
@@ -534,7 +545,7 @@ class MutationTester {
     tests,
     currentMutationIndex,
     totalMutations,
-    workerId = null
+    workerId = null,
   ) {
     const mutationId = `${filePath}:${lineNumber}:${mutationType}`;
 
@@ -544,9 +555,9 @@ class MutationTester {
       totalMutations > 0
         ? Math.round((currentMutationIndex / totalMutations) * 100)
         : 0;
-    const workerPrefix = workerId ? `[Worker ${workerId}] ` : '';
-    console.log(
-      `${workerPrefix}🔧 Instrumenting: ${filePath} (${currentMutationIndex}/${totalMutations} - ${percentage}%) [${fileName}:${lineNumber} ${mutationType}]`
+    const workerPrefix = workerId ? `[Worker ${workerId}] ` : "";
+    logger.info(
+      `${workerPrefix}🔧 Instrumenting: ${filePath} (${currentMutationIndex}/${totalMutations} - ${percentage}%) [${fileName}:${lineNumber} ${mutationType}]`,
     );
 
     try {
@@ -554,7 +565,7 @@ class MutationTester {
       const mutatedFilePath = await this.createMutatedFile(
         filePath,
         lineNumber,
-        mutationType
+        mutationType,
       );
 
       // Check if the mutation actually changed the code
@@ -584,28 +595,31 @@ class MutationTester {
         };
         status = "debug";
         const testInfo = tests.map((test) =>
-          this.getTestFileFromTestName(test.testName)
+          this.getTestFileFromTestName(test.testName),
         );
-        testFiles = testInfo.map(info => info.testFile);
-        console.log(`🔍 Debug mutation created: ${mutatedFilePath}`);
+        testFiles = testInfo.map((info) => info.testFile);
+        logger.debug(`🔍 Debug mutation created: ${mutatedFilePath}`);
         // In debug mode, files are preserved, so no cleanup needed
       } else {
         // Normal mode: Run tests and check if mutation is killed
         const testInfo = tests.map((test) =>
-          this.getTestFileFromTestName(test.testName)
+          this.getTestFileFromTestName(test.testName),
         );
 
         // Extract unique test files and collect test names
-        const uniqueTestFiles = [...new Set(testInfo.map(info => info.testFile))];
-        const testNames = testInfo.map(info => info.testName);
+        const uniqueTestFiles = [
+          ...new Set(testInfo.map((info) => info.testFile)),
+        ];
+        testFiles = uniqueTestFiles;
+        const testNames = testInfo.map((info) => info.testName);
 
         try {
           testResult = await this.runTargetedTests(uniqueTestFiles, testNames);
           status = testResult.success ? "survived" : "killed";
         } catch (testError) {
-          console.error(
+          logger.error(
             `❌ Error running tests for mutation ${mutationId}:`,
-            testError.message
+            testError.message,
           );
           testResult = {
             success: false,
@@ -622,49 +636,31 @@ class MutationTester {
       }
 
       // Debug logging for troubleshooting - ALWAYS show for now to debug the issue
-      console.log(`🔍 Debug: ${mutationId}`);
-      console.log(`  Test success: ${testResult.success}`);
-      console.log(`  Status: ${status}`);
-      console.log(`  Error: ${testResult.error || "none"}`);
+      logger.debug(`🔍 Debug: ${mutationId}`);
+      logger.debug(`  Test success: ${testResult.success}`);
+      logger.debug(`  Status: ${status}`);
+      logger.debug(`  Error: ${testResult.error || "none"}`);
       if (testResult.output && testResult.output.length > 0) {
-        console.log(`  Output snippet: ${testResult.output}...`);
+        logger.debug(`  Output snippet: ${testResult.output}...`);
       }
       if (testResult.jestArgs) {
-        console.log(`  Jest args: ${testResult.jestArgs.join(" ")}`);
+        logger.debug(`  Jest args: ${testResult.jestArgs.join(" ")}`);
       }
 
       // Get original and mutated code for display
       const originalCode = this.getSourceCodeLine(filePath, lineNumber);
       const mutatedCode = this.getMutatedCodePreview(
         originalCode,
-        mutationType
+        mutationType,
       );
 
-      // Check if mutation actually changed the code
-      if (originalCode.trim() === mutatedCode.trim()) {
-        console.log(
-          `⚠️ Mutation failed to change code at ${filePath}:${lineNumber} (${mutationType})`
-        );
-        console.log(`   Original: ${originalCode.trim()}`);
-        console.log(`   Expected mutation type: ${mutationType}`);
-
-        return {
-          id: mutationId,
-          filePath,
-          line: lineNumber,
-          lineNumber,
-          mutationType,
-          mutatorName: mutationType,
-          type: mutationType,
-          status: "error",
-          original: originalCode.trim(),
-          replacement: "MUTATION_FAILED",
-          testsRun: 0,
-          killedBy: [],
-          executionTime: 0,
-          error: "Mutation failed to change the code - no mutation was applied",
-        };
-      }
+      // Use the preview for display, but don't treat preview mismatches as errors.
+      // The real mutation validation already happened at lines 571-582 above
+      // (comparing the actual file before/after Babel transformation).
+      const displayReplacement =
+        originalCode.trim() !== mutatedCode.trim()
+          ? mutatedCode.trim()
+          : `[${mutationType} mutation applied]`;
 
       // Determine which tests killed this mutation (if any)
       const killedBy =
@@ -680,25 +676,25 @@ class MutationTester {
         type: mutationType,
         status,
         original: originalCode.trim(),
-        replacement: mutatedCode.trim(),
+        replacement: displayReplacement,
         testsRun: testFiles.length,
         killedBy,
         executionTime: testResult.executionTime,
         error: testResult.error,
       };
     } catch (error) {
-      console.error(`❌ Error during mutation ${mutationId}:`, error.message);
+      logger.error(`❌ Error during mutation ${mutationId}:`, error.message);
       if (this.config.enableDebugLogging) {
-        console.error(`Full error stack:`, error.stack);
+        logger.error(`Full error stack:`, error.stack);
       }
 
       // Ensure file is restored even if an error occurs
       try {
         this.restoreFile(filePath);
       } catch (restoreError) {
-        console.error(
+        logger.error(
           `❌ Failed to restore file after error:`,
-          restoreError.message
+          restoreError.message,
         );
       }
 
@@ -732,12 +728,12 @@ class MutationTester {
       originalCode,
       lineNumber,
       mutationType,
-      filePath
+      filePath,
     );
 
     if (!mutatedCode) {
       throw new Error(
-        `Failed to apply mutation ${mutationType} at line ${lineNumber} in ${filePath}`
+        `Failed to apply mutation ${mutationType} at line ${lineNumber} in ${filePath}`,
       );
     }
 
@@ -747,7 +743,7 @@ class MutationTester {
         filePath,
         lineNumber,
         mutationType,
-        mutatedCode
+        mutatedCode,
       );
     } else {
       // Normal mode: Temporarily replace original file
@@ -767,7 +763,7 @@ class MutationTester {
     originalFilePath,
     lineNumber,
     mutationType,
-    mutatedCode
+    mutatedCode,
   ) {
     const debugDir = this.config.debugMutationDir || "./mutations-debug";
     const fileName = path.basename(originalFilePath);
@@ -797,7 +793,7 @@ class MutationTester {
     this.debugMutationFiles.add(mutationFilePath);
     this.debugMutationFiles.add(metadataFilePath);
 
-    console.log(`📝 Created debug mutation file: ${mutationFileName}`);
+    logger.debug(`📝 Created debug mutation file: ${mutationFileName}`);
     return mutationFilePath;
   }
 
@@ -830,9 +826,9 @@ class MutationTester {
 
       return result?.code || null;
     } catch (error) {
-      console.error(
+      logger.error(
         `Babel transformation error for ${filePath}:${lineNumber}:`,
-        error.message
+        error.message,
       );
       return null;
     }
@@ -857,39 +853,42 @@ class MutationTester {
 
       // In Docker mode, override setupFilesAfterEnv with absolute path to fix module resolution
       if (process.env.PROJECT_PATH) {
-        jestArgs.push("--setupFilesAfterEnv=/jest-lineage-reporter/src/testSetup.js");
+        jestArgs.push(
+          "--setupFilesAfterEnv=/jest-lineage-reporter/src/testSetup.js",
+        );
       }
 
       // If specific test names are provided, add testNamePattern to run only those tests
       if (testNames && testNames.length > 0) {
         // Escape special regex characters in test names and join with OR operator
-        const escapedTestNames = testNames.map(name =>
-          name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+        const escapedTestNames = testNames.map((name) =>
+          name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"),
         );
-        const testNamePattern = `(${escapedTestNames.join('|')})`;
+        const testNamePattern = `(${escapedTestNames.join("|")})`;
         jestArgs.push(`--testNamePattern=${testNamePattern}`);
-        console.log(`🎯 Running specific tests: ${testNames.join(', ')}`);
+        logger.debug(`🎯 Running specific tests: ${testNames.join(", ")}`);
       } else {
-        console.log(`📁 Running all tests in files: ${testFiles.join(', ')}`);
+        logger.debug(`📁 Running all tests in files: ${testFiles.join(", ")}`);
       }
 
       // Determine the working directory for Jest
       // In Docker mode, PROJECT_PATH env var points to the mounted project directory
       const cwd = process.env.PROJECT_PATH || process.cwd();
 
-      // Use npx to run jest (works in both Docker and host environments)
-      const jestCommand = "npx";
-      const jestCmdArgs = ["jest", ...jestArgs];
+      // Resolve the jest binary from the project's node_modules to avoid shell: true
+      const jestBin = path.resolve(cwd, "node_modules", ".bin", "jest");
+      const jestCommand = fs.existsSync(jestBin) ? jestBin : "npx";
+      const jestCmdArgs =
+        jestCommand === jestBin ? jestArgs : ["jest", ...jestArgs];
 
       // Debug: Log the exact command being executed
-      console.log(`🔍 Spawning: ${jestCommand} ${jestCmdArgs.join(' ')}`);
-      console.log(`🔍 Working directory: ${cwd}`);
+      logger.debug(`🔍 Spawning: ${jestCommand} ${jestCmdArgs.join(" ")}`);
+      logger.debug(`🔍 Working directory: ${cwd}`);
 
       const jest = spawn(jestCommand, jestCmdArgs, {
         stdio: "pipe",
         timeout: this.config.mutationTimeout || 5000,
-        cwd,  // Run Jest from the project directory
-        shell: true, // Use shell to execute command (fixes Jest module resolution in Docker)
+        cwd, // Run Jest from the project directory
         env: {
           ...process.env,
           NODE_ENV: "test",
@@ -951,30 +950,30 @@ class MutationTester {
         // Restore from backup file
         fs.writeFileSync(filePath, fs.readFileSync(backupPath, "utf8"));
         fs.unlinkSync(backupPath);
-        console.log(`✅ Restored ${filePath} from backup`);
+        logger.debug(`✅ Restored ${filePath} from backup`);
       } else if (this.originalFileContents.has(filePath)) {
         // Fallback: restore from stored original content
         fs.writeFileSync(filePath, this.originalFileContents.get(filePath));
-        console.log(
-          `✅ Restored ${filePath} from memory (backup file missing)`
+        logger.debug(
+          `✅ Restored ${filePath} from memory (backup file missing)`,
         );
       } else {
-        console.error(
-          `❌ Cannot restore ${filePath}: no backup or stored content found`
+        logger.error(
+          `❌ Cannot restore ${filePath}: no backup or stored content found`,
         );
       }
     } catch (error) {
-      console.error(`❌ Error restoring ${filePath}:`, error.message);
+      logger.error(`❌ Error restoring ${filePath}:`, error.message);
 
       // Try fallback restoration from stored content
       if (this.originalFileContents.has(filePath)) {
         try {
           fs.writeFileSync(filePath, this.originalFileContents.get(filePath));
-          console.log(`✅ Fallback restoration successful for ${filePath}`);
+          logger.debug(`✅ Fallback restoration successful for ${filePath}`);
         } catch (fallbackError) {
-          console.error(
+          logger.error(
             `❌ Fallback restoration failed for ${filePath}:`,
-            fallbackError.message
+            fallbackError.message,
           );
         }
       }
@@ -1087,7 +1086,7 @@ class MutationTester {
           if (test.testName === testName && test.testFile) {
             return {
               testFile: test.testFile,
-              testName: test.testName
+              testName: test.testName,
             };
           }
         }
@@ -1095,12 +1094,12 @@ class MutationTester {
     }
 
     // Fallback to calculator test if not found (for backward compatibility)
-    console.warn(
-      `⚠️ Could not find test file for test "${testName}", using fallback`
+    logger.warn(
+      `⚠️ Could not find test file for test "${testName}", using fallback`,
     );
     return {
       testFile: "src/__tests__/calculator.test.ts",
-      testName: testName
+      testName: testName,
     };
   }
 
@@ -1109,38 +1108,38 @@ class MutationTester {
    */
   printMutationSummary(results) {
     if (this.config.debugMutations) {
-      console.log("\n🔍 Debug Mutation Testing Results:");
-      console.log("═".repeat(50));
-      console.log(`📊 Total Mutations Created: ${results.totalMutations}`);
-      console.log(
+      logger.info("\n🔍 Debug Mutation Testing Results:");
+      logger.info("═".repeat(50));
+      logger.info(`📊 Total Mutations Created: ${results.totalMutations}`);
+      logger.info(
         `📁 Debug files saved to: ${
           this.config.debugMutationDir || "./mutations-debug"
-        }`
+        }`,
       );
-      console.log(
-        `🔧 Use these files to manually inspect mutations and debug issues`
+      logger.info(
+        `🔧 Use these files to manually inspect mutations and debug issues`,
       );
-      console.log(
-        `💡 To run actual mutation testing, set debugMutations: false in config`
+      logger.info(
+        `💡 To run actual mutation testing, set debugMutations: false in config`,
       );
     } else {
-      console.log("\n🧬 Mutation Testing Results:");
-      console.log("═".repeat(50));
-      console.log(`📊 Total Mutations: ${results.totalMutations}`);
-      console.log(`✅ Killed: ${results.killedMutations}`);
-      console.log(`🔴 Survived: ${results.survivedMutations}`);
-      console.log(`⏰ Timeout: ${results.timeoutMutations}`);
-      console.log(`❌ Error: ${results.errorMutations}`);
-      console.log(`🎯 Mutation Score: ${results.mutationScore}%`);
+      logger.info("\n🧬 Mutation Testing Results:");
+      logger.info("═".repeat(50));
+      logger.info(`📊 Total Mutations: ${results.totalMutations}`);
+      logger.info(`✅ Killed: ${results.killedMutations}`);
+      logger.info(`🔴 Survived: ${results.survivedMutations}`);
+      logger.info(`⏰ Timeout: ${results.timeoutMutations}`);
+      logger.info(`❌ Error: ${results.errorMutations}`);
+      logger.info(`🎯 Mutation Score: ${results.mutationScore}%`);
 
       if (results.mutationScore < (this.config.mutationThreshold || 80)) {
-        console.log(
+        logger.info(
           `⚠️  Mutation score below threshold (${
             this.config.mutationThreshold || 80
-          }%)`
+          }%)`,
         );
       } else {
-        console.log(`🎉 Mutation score meets threshold!`);
+        logger.info(`🎉 Mutation score meets threshold!`);
       }
     }
   }
@@ -1195,21 +1194,25 @@ class MutationTester {
           return result;
         case "returns":
           return originalCode.replace(/return\s+([^;]+);?/g, "return null;");
-        case "literals":
-          return originalCode
-            .replace(/true/g, "false")
-            .replace(/false/g, "true")
-            .replace(/\d+/g, "0");
+        case "literals": {
+          let lit = originalCode
+            .replace(/\btrue\b/g, "false")
+            .replace(/\bfalse\b/g, "true")
+            .replace(/\b\d+\b/g, "0");
+          // Also handle string literals in function arguments and assignments
+          lit = lit.replace(/"([^"]+)"/g, '""').replace(/'([^']+)'/g, "''");
+          return lit;
+        }
         default:
           // Don't apply invalid mutations - return original code unchanged
-          console.warn(
-            `⚠️ Unknown mutation type '${mutationType}' - skipping mutation`
+          logger.warn(
+            `⚠️ Unknown mutation type '${mutationType}' - skipping mutation`,
           );
           return originalCode;
       }
     } catch (error) {
-      console.warn(
-        `⚠️ Mutation error for type '${mutationType}': ${error.message}`
+      logger.warn(
+        `⚠️ Mutation error for type '${mutationType}': ${error.message}`,
       );
       return originalCode;
     }
@@ -1254,7 +1257,7 @@ class MutationTester {
    * Emergency cleanup - restore all files immediately (synchronous)
    */
   emergencyCleanup() {
-    console.log("🔧 Restoring original files...");
+    logger.info("🔧 Restoring original files...");
 
     // Restore from backup files first
     for (const filePath of this.tempFiles) {
@@ -1263,10 +1266,10 @@ class MutationTester {
         if (fs.existsSync(backupPath)) {
           fs.writeFileSync(filePath, fs.readFileSync(backupPath, "utf8"));
           fs.unlinkSync(backupPath);
-          console.log(`✅ Restored: ${filePath}`);
+          logger.debug(`✅ Restored: ${filePath}`);
         }
       } catch (error) {
-        console.error(`❌ Failed to restore ${filePath}:`, error.message);
+        logger.error(`❌ Failed to restore ${filePath}:`, error.message);
       }
     }
 
@@ -1275,26 +1278,26 @@ class MutationTester {
       try {
         if (this.tempFiles.has(filePath)) {
           fs.writeFileSync(filePath, originalContent);
-          console.log(`✅ Restored from memory: ${filePath}`);
+          logger.debug(`✅ Restored from memory: ${filePath}`);
         }
       } catch (error) {
-        console.error(
+        logger.error(
           `❌ Failed to restore from memory ${filePath}:`,
-          error.message
+          error.message,
         );
       }
     }
 
     this.tempFiles.clear();
     this.originalFileContents.clear();
-    console.log("🎯 Emergency cleanup completed");
+    logger.info("🎯 Emergency cleanup completed");
   }
 
   /**
    * Clean up all temporary files
    */
   async cleanup() {
-    console.log("🧹 Starting mutation testing cleanup...");
+    logger.info("🧹 Starting mutation testing cleanup...");
 
     for (const filePath of this.tempFiles) {
       await this.cleanupMutatedFile(filePath);
@@ -1305,14 +1308,14 @@ class MutationTester {
     // In debug mode, keep the debug files but log their location
     if (this.config.debugMutations && this.debugMutationFiles.size > 0) {
       const debugDir = this.config.debugMutationDir || "./mutations-debug";
-      console.log(`\n📁 Debug mutation files preserved in: ${debugDir}`);
-      console.log(`   Total files created: ${this.debugMutationFiles.size}`);
-      console.log(
-        `   Use these files to manually inspect mutations and debug issues.`
+      logger.info(`\n📁 Debug mutation files preserved in: ${debugDir}`);
+      logger.info(`   Total files created: ${this.debugMutationFiles.size}`);
+      logger.info(
+        `   Use these files to manually inspect mutations and debug issues.`,
       );
     }
 
-    console.log("✅ Mutation testing cleanup completed");
+    logger.info("✅ Mutation testing cleanup completed");
   }
 }
 

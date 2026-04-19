@@ -3,12 +3,13 @@
  * Run Jest tests with lineage tracking
  */
 
-const { runJest } = require('../utils/jest-runner');
-const { loadFullConfig } = require('../utils/config-loader');
-const { lineageDataExists } = require('../utils/data-loader');
-const { success, error, info } = require('../utils/output-formatter');
-const fs = require('fs');
-const path = require('path');
+const { runJest } = require("../utils/jest-runner");
+const { loadFullConfig } = require("../utils/config-loader");
+const { lineageDataExists } = require("../utils/data-loader");
+const { success, error, info } = require("../utils/output-formatter");
+const fs = require("fs");
+const path = require("path");
+const logger = require("../../logger");
 
 async function testCommand(jestArgs, options) {
   try {
@@ -22,27 +23,29 @@ async function testCommand(jestArgs, options) {
       enableLineage: options.lineage !== false,
       enablePerformance: options.performance !== false,
       enableQuality: options.quality !== false,
-      quiet: options.quiet
+      quiet: options.quiet,
     });
 
     // Check if lineage data was generated
-    const dataPath = path.join(process.cwd(), '.jest-lineage-data.json');
+    const dataPath = path.join(process.cwd(), ".jest-lineage-data.json");
     if (result.success && fs.existsSync(dataPath)) {
-      const data = JSON.parse(fs.readFileSync(dataPath, 'utf8'));
+      const data = JSON.parse(fs.readFileSync(dataPath, "utf8"));
       const testCount = data.tests ? data.tests.length : 0;
       const fileCount = data.tests
-        ? new Set(data.tests.flatMap(t =>
-            Object.keys(t.coverage || {}).map(k => k.split(':')[0])
-          )).size
+        ? new Set(
+            data.tests.flatMap((t) =>
+              Object.keys(t.coverage || {}).map((k) => k.split(":")[0]),
+            ),
+          ).size
         : 0;
 
       if (!options.quiet) {
         info(`Lineage data saved to: ${dataPath}`);
-        console.log(`   - ${testCount} tests tracked`);
-        console.log(`   - ${fileCount} files analyzed\n`);
+        logger.info(`   - ${testCount} tests tracked`);
+        logger.info(`   - ${fileCount} files analyzed\n`);
       }
     } else if (!result.success) {
-      error('Tests failed. Lineage data may be incomplete.');
+      error("Tests failed. Lineage data may be incomplete.");
     }
 
     // Exit with Jest's exit code

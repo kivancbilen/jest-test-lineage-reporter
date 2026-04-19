@@ -1,7 +1,7 @@
 // Example file to demonstrate call depth tracking
 
 export function directFunction(x: number): number {
-  return x * 2; // This will be depth 1 when called directly from tests
+  return x / 2; // This will be depth 1 when called directly from tests
 }
 export function oneLevel(x: number): number {
   return directFunction(x) + 1; // directFunction will be depth 2 here
@@ -30,7 +30,22 @@ export function recursiveFunction(n: number, depth: number = 0): number {
 }
 
 // Global array to hold leaked memory - this will cause actual memory leaks
-const memoryLeakStorage: any[] = [];
+interface LeakedObject {
+  id: number;
+  data: Array<{
+    index: number;
+    value: number;
+    timestamp: Date;
+    largeString: string;
+    metadata: {
+      created: number;
+      processed: boolean;
+      tags: string[];
+      history: number[];
+    };
+  }>;
+}
+const memoryLeakStorage: LeakedObject[] = [];
 export function memoryLeakFunction(size: number): number {
   // Create large objects and store them globally (this leaks memory!)
   const largeObject = {
@@ -39,12 +54,12 @@ export function memoryLeakFunction(size: number): number {
       index: i,
       value: Math.random(),
       timestamp: new Date(),
-      largeString: 'x'.repeat(1000),
+      largeString: "x".repeat(1000),
       // 1KB string per item
       metadata: {
         created: Date.now(),
         processed: false,
-        tags: ['memory', 'leak', 'test', 'large'],
+        tags: ["memory", "leak", "test", "large"],
         history: new Array(100).fill(0).map(() => Math.random())
       }
     }))

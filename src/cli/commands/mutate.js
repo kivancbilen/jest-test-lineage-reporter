@@ -3,11 +3,22 @@
  * Run mutation testing on existing lineage data
  */
 
-const MutationTester = require('../../MutationTester');
-const { loadLineageData, processLineageDataForMutation } = require('../utils/data-loader');
-const { loadFullConfig } = require('../utils/config-loader');
-const { spinner, printMutationSummary, error, success, info, printLineageDataSummary } = require('../utils/output-formatter');
-const chalk = require('chalk');
+const MutationTester = require("../../MutationTester");
+const {
+  loadLineageData,
+  processLineageDataForMutation,
+} = require("../utils/data-loader");
+const { loadFullConfig } = require("../utils/config-loader");
+const {
+  spinner,
+  printMutationSummary,
+  error,
+  success,
+  info,
+  printLineageDataSummary,
+} = require("../utils/output-formatter");
+const chalk = require("chalk");
+const logger = require("../../logger");
 
 async function mutateCommand(options) {
   let mutationTester = null;
@@ -29,22 +40,24 @@ async function mutateCommand(options) {
     const fileCount = Object.keys(lineageData).length;
     const lineCount = Object.values(lineageData).reduce(
       (sum, lines) => sum + Object.keys(lines).length,
-      0
+      0,
     );
 
     if (fileCount === 0 || lineCount === 0) {
-      error('No coverage data found in lineage file. Run tests first.');
+      error("No coverage data found in lineage file. Run tests first.");
       process.exit(1);
     }
 
-    info(`Processing ${chalk.cyan(fileCount)} files with ${chalk.cyan(lineCount)} covered lines\n`);
+    info(
+      `Processing ${chalk.cyan(fileCount)} files with ${chalk.cyan(lineCount)} covered lines\n`,
+    );
 
     // Create mutation tester
     mutationTester = new MutationTester(config);
     mutationTester.setLineageData(lineageData);
 
     // Run mutation testing
-    const spin = spinner('Running mutation testing...');
+    const spin = spinner("Running mutation testing...");
     if (!options.verbose) {
       spin.start();
     }
@@ -52,13 +65,16 @@ async function mutateCommand(options) {
     const results = await mutationTester.runMutationTesting();
 
     if (!options.verbose) {
-      spin.succeed('Mutation testing completed!');
+      spin.succeed("Mutation testing completed!");
     }
 
     // Save results to file for HTML report
-    const fs = require('fs');
-    const path = require('path');
-    const resultsPath = path.join(process.cwd(), '.jest-lineage-mutation-results.json');
+    const fs = require("fs");
+    const path = require("path");
+    const resultsPath = path.join(
+      process.cwd(),
+      ".jest-lineage-mutation-results.json",
+    );
     fs.writeFileSync(resultsPath, JSON.stringify(results, null, 2));
     info(`Mutation results saved to: ${chalk.yellow(resultsPath)}`);
 
@@ -68,7 +84,11 @@ async function mutateCommand(options) {
     // Check threshold
     const threshold = parseInt(options.threshold) || 80;
     if (results.mutationScore < threshold) {
-      console.log(chalk.yellow(`\n⚠️  Mutation score ${results.mutationScore.toFixed(1)}% is below threshold ${threshold}%`));
+      logger.info(
+        chalk.yellow(
+          `\nMutation score ${results.mutationScore.toFixed(1)}% is below threshold ${threshold}%`,
+        ),
+      );
       process.exit(1);
     } else {
       success(`Mutation score meets threshold (${threshold}%)`);
@@ -77,7 +97,7 @@ async function mutateCommand(options) {
   } catch (err) {
     error(`Mutation testing failed: ${err.message}`);
     if (options.verbose) {
-      console.error(err.stack);
+      logger.error(err.stack);
     }
 
     // Cleanup on error
@@ -85,7 +105,10 @@ async function mutateCommand(options) {
       try {
         await mutationTester.cleanup();
       } catch (cleanupErr) {
-        // Ignore cleanup errors
+        logger.warn(
+          "Warning: cleanup after mutation failure encountered an error:",
+          cleanupErr.message,
+        );
       }
     }
 

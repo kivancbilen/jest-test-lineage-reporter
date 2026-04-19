@@ -1,7 +1,8 @@
-const fs = require('fs');
-const path = require('path');
-const { loadConfig } = require('./config');
-const MutationTester = require('./MutationTester');
+const fs = require("fs");
+const path = require("path");
+const { loadConfig } = require("./config");
+const MutationTester = require("./MutationTester");
+const logger = require("./logger");
 
 class TestCoverageReporter {
   constructor(globalConfig, options) {
@@ -18,17 +19,17 @@ class TestCoverageReporter {
 
   validateConfig() {
     if (!this.globalConfig) {
-      throw new Error('TestCoverageReporter: globalConfig is required');
+      throw new Error("TestCoverageReporter: globalConfig is required");
     }
 
     // Set default options
     this.options = {
-      outputFile: this.options.outputFile || 'test-lineage-report.html',
+      outputFile: this.options.outputFile || "test-lineage-report.html",
       memoryLeakThreshold: this.options.memoryLeakThreshold || 50 * 1024, // 50KB
       gcPressureThreshold: this.options.gcPressureThreshold || 5,
       qualityThreshold: this.options.qualityThreshold || 60,
       enableDebugLogging: this.options.enableDebugLogging || false,
-      ...this.options
+      ...this.options,
     };
   }
 
@@ -47,19 +48,28 @@ class TestCoverageReporter {
 
     // Process each individual test result (fallback mode)
     testResult.testResults.forEach((testCase, index) => {
-      if (testCase.status === 'passed') {
-        this.processIndividualTestCoverage(testCase, coverage, testFilePath, index);
+      if (testCase.status === "passed") {
+        this.processIndividualTestCoverage(
+          testCase,
+          coverage,
+          testFilePath,
+          index,
+        );
       }
     });
   }
 
   processLineageResults(lineageResults, testFilePath) {
-    console.log('🎯 Processing precise lineage tracking results...');
+    logger.info("🎯 Processing precise lineage tracking results...");
 
     // lineageResults format: { filePath: { lineNumber: [testInfo, ...] } }
     for (const filePath in lineageResults) {
       // Skip test files - we only want to track coverage of source files
-      if (filePath.includes('__tests__') || filePath.includes('.test.') || filePath.includes('.spec.')) {
+      if (
+        filePath.includes("__tests__") ||
+        filePath.includes(".test.") ||
+        filePath.includes(".spec.")
+      ) {
         continue;
       }
 
@@ -72,13 +82,13 @@ class TestCoverageReporter {
         const testInfos = lineageResults[filePath][lineNumber];
 
         // Convert to our expected format
-        const processedTests = testInfos.map(testInfo => ({
+        const processedTests = testInfos.map((testInfo) => ({
           name: testInfo.testName,
           file: path.basename(testInfo.testFile || testFilePath),
           fullPath: testInfo.testFile || testFilePath,
           executionCount: testInfo.executionCount || 1,
           timestamp: testInfo.timestamp || Date.now(),
-          type: 'precise' // Mark as precise tracking
+          type: "precise", // Mark as precise tracking
         }));
 
         this.coverageData[filePath][lineNumber] = processedTests;
@@ -94,7 +104,11 @@ class TestCoverageReporter {
 
     for (const filePath in coverage) {
       // Skip test files
-      if (filePath.includes('__tests__') || filePath.includes('.test.') || filePath.includes('.spec.')) {
+      if (
+        filePath.includes("__tests__") ||
+        filePath.includes(".test.") ||
+        filePath.includes(".spec.")
+      ) {
         continue;
       }
 
@@ -117,14 +131,25 @@ class TestCoverageReporter {
           }
 
           // Use heuristics to determine if this test likely covered this line
-          if (this.isTestLikelyCoveringLine(testCase, filePath, lineNumber, fileCoverage)) {
+          if (
+            this.isTestLikelyCoveringLine(
+              testCase,
+              filePath,
+              lineNumber,
+              fileCoverage,
+            )
+          ) {
             // Add test with more detailed information
             const testInfo = {
               name: testName,
               file: path.basename(testFilePath),
               fullPath: testFilePath,
               duration: testCase.duration || 0,
-              confidence: this.calculateConfidence(testCase, filePath, lineNumber)
+              confidence: this.calculateConfidence(
+                testCase,
+                filePath,
+                lineNumber,
+              ),
             };
 
             this.coverageData[filePath][lineNumber].push(testInfo);
@@ -134,22 +159,111 @@ class TestCoverageReporter {
     }
   }
 
-  isTestLikelyCoveringLine(testCase, _filePath, _lineNumber, _fileCoverage) {
-    // Heuristic 1: If test name mentions the function/file being tested
-    const _testName = testCase.fullName.toLowerCase();
+  isTestLikelyCoveringLine(testCase, filePath, lineNumber, fileCoverage) {
+    const testName = testCase.fullName.toLowerCase();
+    const testFile = (testCase.testFilePath || "").toLowerCase();
 
-    // Simplified heuristic - for now, include all tests
-    // TODO: Implement more sophisticated heuristics
+    // Heuristic 1: File name correspondence (e.g. calculator.test.ts -> calculator.ts)
+    const sourceBaseName = path
+      .basename(filePath)
+      .replace(/\.(ts|js|tsx|jsx)$/, "")
+      .toLowerCase();
+    const testBaseName = path
+      .basename(testFile)
+      .replace(/\.(test|spec)\.(ts|js|tsx|jsx)$/, "")
+      .toLowerCase();
+    if (testBaseName && testBaseName === sourceBaseName) {
+      return true;
+    }
 
-    // Heuristic 3: If it's a simple file with few tests, assume all tests cover most lines
-    // This is a fallback for when we can't determine specific coverage
-    return true; // For now, include all tests (we'll refine this)
+    // Heuristic 2: Test name mentions the source file name or its key identifiers
+    if (testName.includes(sourceBaseName)) {
+      return true;
+    }
+
+    // Heuristic 3: Test name mentions function/variable names from the covered line
+    const sourceLine = this.getSourceCodeLine(filePath, parseInt(lineNumber));
+    if (sourceLine) {
+      const keywords = this.extractCodeKeywords(sourceLine);
+      for (const keyword of keywords) {
+        if (keyword.length > 2 && testName.includes(keyword.toLowerCase())) {
+          return true;
+        }
+      }
+    }
+
+    // Heuristic 4: If only a few statements in the file are covered, the test is likely
+    // targeted — include it. Count covered vs total statements.
+    if (fileCoverage && fileCoverage.s) {
+      const statements = fileCoverage.s;
+      const total = Object.keys(statements).length;
+      const covered = Object.values(statements).filter(
+        (count) => count > 0,
+      ).length;
+      const coverageRatio = total > 0 ? covered / total : 0;
+
+      // If the test covers less than half the file, it's likely targeted
+      if (coverageRatio < 0.5) {
+        return true;
+      }
+    }
+
+    // Heuristic 5: Fallback — if the file has few total lines, include all tests
+    // (small utility files are likely fully exercised by any importing test)
+    if (
+      fileCoverage &&
+      fileCoverage.s &&
+      Object.keys(fileCoverage.s).length <= 10
+    ) {
+      return true;
+    }
+
+    // Default: exclude — not enough signal to link this test to this line
+    return false;
   }
 
-  calculateConfidence(_testCase, _filePath, _lineNumber) {
-    // Simplified confidence calculation
-    // TODO: Implement more sophisticated confidence scoring
-    return 75; // Default confidence
+  calculateConfidence(testCase, filePath, lineNumber) {
+    let confidence = 40; // base confidence for estimated coverage
+
+    const testName = testCase.fullName.toLowerCase();
+    const testFile = (testCase.testFilePath || "").toLowerCase();
+    const sourceBaseName = path
+      .basename(filePath)
+      .replace(/\.(ts|js|tsx|jsx)$/, "")
+      .toLowerCase();
+    const testBaseName = path
+      .basename(testFile)
+      .replace(/\.(test|spec)\.(ts|js|tsx|jsx)$/, "")
+      .toLowerCase();
+
+    // Boost: test file directly corresponds to source file (+25)
+    if (testBaseName && testBaseName === sourceBaseName) {
+      confidence += 25;
+    }
+
+    // Boost: test name mentions the source file name (+15)
+    if (testName.includes(sourceBaseName)) {
+      confidence += 15;
+    }
+
+    // Boost: test name mentions function/variable on the covered line (+15)
+    const sourceLine = this.getSourceCodeLine(filePath, parseInt(lineNumber));
+    if (sourceLine) {
+      const keywords = this.extractCodeKeywords(sourceLine);
+      for (const keyword of keywords) {
+        if (keyword.length > 2 && testName.includes(keyword.toLowerCase())) {
+          confidence += 15;
+          break;
+        }
+      }
+    }
+
+    // Boost: short test duration suggests focused test (+5)
+    if (testCase.duration && testCase.duration < 50) {
+      confidence += 5;
+    }
+
+    return Math.min(confidence, 100);
   }
 
   extractCodeKeywords(sourceCode) {
@@ -157,9 +271,11 @@ class TestCoverageReporter {
     const keywords = [];
 
     // Match function names: function name() or name: function() or const name =
-    const functionMatches = sourceCode.match(/(?:function\s+(\w+)|(\w+)\s*[:=]\s*(?:function|\()|(?:const|let|var)\s+(\w+))/g);
+    const functionMatches = sourceCode.match(
+      /(?:function\s+(\w+)|(\w+)\s*[:=]\s*(?:function|\()|(?:const|let|var)\s+(\w+))/g,
+    );
     if (functionMatches) {
-      functionMatches.forEach(match => {
+      functionMatches.forEach((match) => {
         const nameMatch = match.match(/(\w+)/);
         if (nameMatch) keywords.push(nameMatch[1]);
       });
@@ -168,7 +284,7 @@ class TestCoverageReporter {
     // Match method calls: object.method()
     const methodMatches = sourceCode.match(/(\w+)\s*\(/g);
     if (methodMatches) {
-      methodMatches.forEach(match => {
+      methodMatches.forEach((match) => {
         const nameMatch = match.match(/(\w+)/);
         if (nameMatch) keywords.push(nameMatch[1]);
       });
@@ -179,11 +295,11 @@ class TestCoverageReporter {
 
   getSourceCodeLine(filePath, lineNumber) {
     try {
-      const sourceCode = fs.readFileSync(filePath, 'utf8');
-      const lines = sourceCode.split('\n');
-      return lines[lineNumber - 1] || '';
+      const sourceCode = fs.readFileSync(filePath, "utf8");
+      const lines = sourceCode.split("\n");
+      return lines[lineNumber - 1] || "";
     } catch (error) {
-      return '';
+      return "";
     }
   }
 
@@ -206,7 +322,9 @@ class TestCoverageReporter {
     const config = loadConfig(this.options);
 
     if (config.enableMutationTesting) {
-      console.log('\n🧬 Mutation testing enabled, starting mutation analysis...');
+      logger.info(
+        "\n🧬 Mutation testing enabled, starting mutation analysis...",
+      );
 
       let mutationTester = null;
       try {
@@ -215,7 +333,7 @@ class TestCoverageReporter {
         // Pass the current coverage data directly instead of loading from file
         const lineageData = this.convertCoverageDataToLineageFormat();
         if (!lineageData || Object.keys(lineageData).length === 0) {
-          console.log('⚠️ No lineage data available for mutation testing');
+          logger.info("⚠️ No lineage data available for mutation testing");
           return;
         }
 
@@ -230,11 +348,10 @@ class TestCoverageReporter {
 
         // Regenerate HTML report with mutation data
         await this.generateHtmlReport();
-
       } catch (error) {
-        console.error('❌ Mutation testing failed:', error.message);
+        logger.error("❌ Mutation testing failed:", error.message);
         if (this.options.enableDebugLogging) {
-          console.error(error.stack);
+          logger.error(error.stack);
         }
       } finally {
         // Always cleanup, even if there was an error
@@ -242,7 +359,10 @@ class TestCoverageReporter {
           try {
             await mutationTester.cleanup();
           } catch (cleanupError) {
-            console.error('❌ Error during mutation testing cleanup:', cleanupError.message);
+            logger.error(
+              "❌ Error during mutation testing cleanup:",
+              cleanupError.message,
+            );
             // Try emergency cleanup as last resort
             mutationTester.emergencyCleanup();
           }
@@ -253,8 +373,13 @@ class TestCoverageReporter {
 
   tryGetPreciseTrackingData() {
     // Try to get data from global persistent data first (most reliable)
-    if (global.__LINEAGE_PERSISTENT_DATA__ && global.__LINEAGE_PERSISTENT_DATA__.length > 0) {
-      console.log('🎯 Found precise lineage tracking data from global persistent data! Replacing estimated data...');
+    if (
+      global.__LINEAGE_PERSISTENT_DATA__ &&
+      global.__LINEAGE_PERSISTENT_DATA__.length > 0
+    ) {
+      logger.info(
+        "🎯 Found precise lineage tracking data from global persistent data! Replacing estimated data...",
+      );
 
       // Clear existing coverage data and replace with precise data
       this.coverageData = {};
@@ -266,11 +391,13 @@ class TestCoverageReporter {
     if (global.__GET_LINEAGE_RESULTS__) {
       const lineageResults = global.__GET_LINEAGE_RESULTS__();
       if (Object.keys(lineageResults).length > 0) {
-        console.log('🎯 Found precise lineage tracking data from global function! Replacing estimated data...');
+        logger.info(
+          "🎯 Found precise lineage tracking data from global function! Replacing estimated data...",
+        );
 
         // Clear existing coverage data and replace with precise data
         this.coverageData = {};
-        this.processLineageResults(lineageResults, 'precise-tracking');
+        this.processLineageResults(lineageResults, "precise-tracking");
         return true;
       }
     }
@@ -278,7 +405,9 @@ class TestCoverageReporter {
     // Last resort: try to read tracking data from file
     const fileData = this.readTrackingDataFromFile();
     if (fileData) {
-      console.log('🎯 Found precise lineage tracking data from file! Replacing estimated data...');
+      logger.info(
+        "🎯 Found precise lineage tracking data from file! Replacing estimated data...",
+      );
 
       // Clear existing coverage data and replace with precise data
       this.coverageData = {};
@@ -286,7 +415,7 @@ class TestCoverageReporter {
       return true;
     }
 
-    console.log('⚠️ No precise tracking data found, using estimated coverage');
+    logger.info("⚠️ No precise tracking data found, using estimated coverage");
     return false;
   }
 
@@ -299,7 +428,7 @@ class TestCoverageReporter {
     // Iterate through all coverage data and convert to mutation testing format
     // The actual structure is: this.coverageData[filePath][lineNumber] = [testInfo, ...]
     for (const [filePath, fileData] of Object.entries(this.coverageData)) {
-      if (!fileData || typeof fileData !== 'object') continue;
+      if (!fileData || typeof fileData !== "object") continue;
 
       for (const [lineNumber, tests] of Object.entries(fileData)) {
         if (!Array.isArray(tests) || tests.length === 0) continue;
@@ -308,19 +437,21 @@ class TestCoverageReporter {
           lineageData[filePath] = {};
         }
 
-        lineageData[filePath][lineNumber] = tests.map(test => ({
-          testName: test.name || test.testName || 'Unknown test',
-          testType: test.testType || test.type || 'it',
-          testFile: test.testFile || test.file || 'unknown',
+        lineageData[filePath][lineNumber] = tests.map((test) => ({
+          testName: test.name || test.testName || "Unknown test",
+          testType: test.testType || test.type || "it",
+          testFile: test.testFile || test.file || "unknown",
           executionCount: test.executionCount || 1,
         }));
       }
     }
 
-    console.log(`🔄 Converted coverage data to lineage format: ${Object.keys(lineageData).length} files`);
-    Object.keys(lineageData).forEach(filePath => {
+    logger.info(
+      `🔄 Converted coverage data to lineage format: ${Object.keys(lineageData).length} files`,
+    );
+    Object.keys(lineageData).forEach((filePath) => {
       const lineCount = Object.keys(lineageData[filePath]).length;
-      console.log(`  ${filePath}: ${lineCount} lines`);
+      logger.debug(`  ${filePath}: ${lineCount} lines`);
     });
 
     return lineageData;
@@ -328,93 +459,120 @@ class TestCoverageReporter {
 
   readTrackingDataFromFile() {
     try {
-      const filePath = path.join(process.cwd(), '.jest-lineage-data.json');
+      const filePath = path.join(process.cwd(), ".jest-lineage-data.json");
       if (fs.existsSync(filePath)) {
-        const data = JSON.parse(fs.readFileSync(filePath, 'utf8'));
-        console.log(`📖 Read tracking data: ${data.tests.length} tests from file`);
-
-
+        const data = JSON.parse(fs.readFileSync(filePath, "utf8"));
+        logger.info(
+          `📖 Read tracking data: ${data.tests.length} tests from file`,
+        );
 
         return data.tests;
       } else {
-        console.log(`⚠️ Tracking data file not found: ${filePath}`);
+        logger.debug(`⚠️ Tracking data file not found: ${filePath}`);
       }
     } catch (error) {
-      console.warn('Warning: Could not read tracking data from file:', error.message);
+      logger.warn(
+        "Warning: Could not read tracking data from file:",
+        error.message,
+      );
     }
     return null;
   }
 
   processFileTrackingData(testDataArray) {
     if (!Array.isArray(testDataArray)) {
-      console.warn('⚠️ processFileTrackingData: testDataArray is not an array');
+      logger.warn("⚠️ processFileTrackingData: testDataArray is not an array");
       return;
     }
 
-    console.log(`🔍 Processing ${testDataArray.length} test data entries`);
+    logger.debug(`🔍 Processing ${testDataArray.length} test data entries`);
 
     let processedFiles = 0;
     let processedLines = 0;
 
-
     testDataArray.forEach((testData, index) => {
       try {
-        if (!testData || typeof testData !== 'object') {
-          console.warn(`⚠️ Skipping invalid test data at index ${index}:`, testData);
+        if (!testData || typeof testData !== "object") {
+          logger.warn(
+            `⚠️ Skipping invalid test data at index ${index}:`,
+            testData,
+          );
           return;
         }
 
-        if (!testData.coverage || typeof testData.coverage !== 'object') {
-          console.warn(`⚠️ Skipping test data with invalid coverage at index ${index}:`, testData.name);
+        if (!testData.coverage || typeof testData.coverage !== "object") {
+          logger.warn(
+            `⚠️ Skipping test data with invalid coverage at index ${index}:`,
+            testData.name,
+          );
           return;
         }
 
-        // testData.coverage is now a plain object, not a Map
-        Object.entries(testData.coverage).forEach(([key, count]) => {
+        // Coverage may be a Map (from global data) or a plain object (from file)
+        const coverageEntries =
+          testData.coverage instanceof Map
+            ? Array.from(testData.coverage.entries())
+            : Object.entries(testData.coverage);
+        coverageEntries.forEach(([key, count]) => {
           try {
             // Skip metadata, depth, and performance entries for now (process them separately)
-            if (key.includes(':meta') || key.includes(':depth') || key.includes(':performance')) {
+            if (
+              key.includes(":meta") ||
+              key.includes(":depth") ||
+              key.includes(":performance")
+            ) {
               return;
             }
 
-            const parts = key.split(':');
+            const parts = key.split(":");
             if (parts.length < 2) {
-              console.warn(`⚠️ Invalid key format: ${key}`);
+              logger.warn(`⚠️ Invalid key format: ${key}`);
               return;
             }
 
             const lineNumber = parts.pop(); // Last part is line number
-            const filePath = parts.join(':'); // Rejoin in case path contains colons
+            const filePath = parts.join(":"); // Rejoin in case path contains colons
 
             // Validate line number
             if (isNaN(parseInt(lineNumber))) {
-              console.warn(`⚠️ Invalid line number: ${lineNumber} for file: ${filePath}`);
+              logger.warn(
+                `⚠️ Invalid line number: ${lineNumber} for file: ${filePath}`,
+              );
               return;
             }
 
             // Skip test files and node_modules
-            if (filePath.includes('__tests__') ||
-                filePath.includes('.test.') ||
-                filePath.includes('.spec.') ||
-                filePath.includes('node_modules')) {
-              console.log(`🔍 DEBUG: Skipping test/node_modules file: ${filePath}`);
+            if (
+              filePath.includes("__tests__") ||
+              filePath.includes(".test.") ||
+              filePath.includes(".spec.") ||
+              filePath.includes("node_modules")
+            ) {
+              logger.debug(
+                `🔍 DEBUG: Skipping test/node_modules file: ${filePath}`,
+              );
               return;
             }
 
-            //console.log(`🔍 DEBUG: Processing coverage for ${filePath}:${lineNumber} (count: ${count})`);
             processedLines++;
+
+            // Helper to look up keys in coverage (handles both Map and plain object)
+            const getCoverage = (k) =>
+              testData.coverage instanceof Map
+                ? testData.coverage.get(k)
+                : testData.coverage[k];
 
             // Get depth data for this line
             const depthKey = `${filePath}:${lineNumber}:depth`;
-            const depthData = testData.coverage[depthKey] || { 1: count };
+            const depthData = getCoverage(depthKey) || { 1: count };
 
             // Get metadata for this line
             const metaKey = `${filePath}:${lineNumber}:meta`;
-            const metaData = testData.coverage[metaKey] || {};
+            const metaData = getCoverage(metaKey) || {};
 
             // Get performance data for this line
             const performanceKey = `${filePath}:${lineNumber}:performance`;
-            const performanceData = testData.coverage[performanceKey] || {
+            const performanceData = getCoverage(performanceKey) || {
               totalExecutions: count,
               totalCpuTime: 0,
               totalWallTime: 0,
@@ -422,7 +580,7 @@ class TestCoverageReporter {
               minExecutionTime: 0,
               maxExecutionTime: 0,
               executionTimes: [],
-              cpuCycles: []
+              cpuCycles: [],
             };
 
             // Initialize the data structure for this file if it doesn't exist
@@ -436,27 +594,46 @@ class TestCoverageReporter {
 
             // Add test with precise tracking information including depth, performance, and quality
             const testInfo = {
-              name: testData.name || 'Unknown test',
-              file: testData.testFile || 'unknown-test-file',
-              fullPath: testData.testFile || 'unknown-test-file',
-              executionCount: typeof count === 'number' ? count : 1,
+              name: testData.name || "Unknown test",
+              file: testData.testFile || "unknown-test-file",
+              fullPath: testData.testFile || "unknown-test-file",
+              executionCount: typeof count === "number" ? count : 1,
               duration: testData.duration || 0,
-              type: 'precise', // Mark as precise tracking
+              type: "precise", // Mark as precise tracking
               depthData: depthData, // Call depth information
               minDepth: metaData.minDepth || 1,
               maxDepth: metaData.maxDepth || 1,
-              nodeType: metaData.nodeType || 'unknown',
+              nodeType: metaData.nodeType || "unknown",
               performance: {
                 totalCpuTime: performanceData.totalCpuTime || 0,
                 totalWallTime: performanceData.totalWallTime || 0,
-                avgCpuTime: performanceData.totalExecutions > 0 ? performanceData.totalCpuTime / performanceData.totalExecutions : 0,
-                avgWallTime: performanceData.totalExecutions > 0 ? performanceData.totalWallTime / performanceData.totalExecutions : 0,
+                avgCpuTime:
+                  performanceData.totalExecutions > 0
+                    ? performanceData.totalCpuTime /
+                      performanceData.totalExecutions
+                    : 0,
+                avgWallTime:
+                  performanceData.totalExecutions > 0
+                    ? performanceData.totalWallTime /
+                      performanceData.totalExecutions
+                    : 0,
                 totalMemoryDelta: performanceData.totalMemoryDelta || 0,
                 minExecutionTime: performanceData.minExecutionTime || 0,
                 maxExecutionTime: performanceData.maxExecutionTime || 0,
-                totalCpuCycles: performanceData.cpuCycles ? performanceData.cpuCycles.reduce((sum, cycles) => sum + cycles, 0) : 0,
-                avgCpuCycles: performanceData.cpuCycles && performanceData.cpuCycles.length > 0 ?
-                  performanceData.cpuCycles.reduce((sum, cycles) => sum + cycles, 0) / performanceData.cpuCycles.length : 0,
+                totalCpuCycles: performanceData.cpuCycles
+                  ? performanceData.cpuCycles.reduce(
+                      (sum, cycles) => sum + cycles,
+                      0,
+                    )
+                  : 0,
+                avgCpuCycles:
+                  performanceData.cpuCycles &&
+                  performanceData.cpuCycles.length > 0
+                    ? performanceData.cpuCycles.reduce(
+                        (sum, cycles) => sum + cycles,
+                        0,
+                      ) / performanceData.cpuCycles.length
+                    : 0,
                 performanceVariance: performanceData.performanceVariance || 0,
                 performanceStdDev: performanceData.performanceStdDev || 0,
                 performanceP95: performanceData.performanceP95 || 0,
@@ -464,7 +641,7 @@ class TestCoverageReporter {
                 slowExecutions: performanceData.slowExecutions || 0,
                 fastExecutions: performanceData.fastExecutions || 0,
                 memoryLeaks: performanceData.memoryLeaks || 0,
-                gcPressure: performanceData.gcPressure || 0
+                gcPressure: performanceData.gcPressure || 0,
               },
               quality: testData.qualityMetrics || {
                 assertions: 0,
@@ -478,42 +655,51 @@ class TestCoverageReporter {
                 testSmells: [],
                 codePatterns: [],
                 isolationScore: 100,
-                testLength: 0
-              }
+                testLength: 0,
+              },
             };
 
             this.coverageData[filePath][lineNumber].push(testInfo);
-
-            // console.log(`🔍 DEBUG: Added coverage for "${filePath}":${lineNumber} -> ${testData.name} (${count} executions)`);
-
           } catch (entryError) {
-            console.warn(`⚠️ Error processing coverage entry ${key}:`, entryError.message);
+            logger.warn(
+              `⚠️ Error processing coverage entry ${key}:`,
+              entryError.message,
+            );
           }
         });
       } catch (testError) {
-        console.warn(`⚠️ Error processing test data at index ${index}:`, testError.message);
+        logger.warn(
+          `⚠️ Error processing test data at index ${index}:`,
+          testError.message,
+        );
       }
     });
 
-    console.log(`✅ Processed tracking data for ${Object.keys(this.coverageData).length} files (${processedLines} lines processed)`);
+    logger.info(
+      `✅ Processed tracking data for ${Object.keys(this.coverageData).length} files (${processedLines} lines processed)`,
+    );
 
     // Debug: Show what files were processed
-    Object.keys(this.coverageData).forEach(filePath => {
+    Object.keys(this.coverageData).forEach((filePath) => {
       const lineCount = Object.keys(this.coverageData[filePath]).length;
-      console.log(`  📁 ${filePath}: ${lineCount} lines`);
+      logger.debug(`  📁 ${filePath}: ${lineCount} lines`);
     });
   }
 
   generateReport() {
-    console.log('\n--- Jest Test Lineage Reporter: Line-by-Line Test Coverage ---');
+    logger.info(
+      "\n--- Jest Test Lineage Reporter: Line-by-Line Test Coverage ---",
+    );
 
     // Generate test quality summary first
     this.generateTestQualitySummary();
 
     for (const filePath in this.coverageData) {
       const lineCoverage = this.coverageData[filePath];
-        
-      const lineNumbers = Object.keys(lineCoverage).sort((a, b) => parseInt(a) - parseInt(b));
+
+      const lineNumbers = Object.keys(lineCoverage).sort(
+        (a, b) => parseInt(a) - parseInt(b),
+      );
 
       if (lineNumbers.length === 0) {
         continue;
@@ -522,40 +708,59 @@ class TestCoverageReporter {
       for (const line of lineNumbers) {
         const testInfos = lineCoverage[line];
         const uniqueTests = this.deduplicateTests(testInfos);
-        uniqueTests.forEach(testInfo => {
-          const testName = typeof testInfo === 'string' ? testInfo : testInfo.name;
-          const testFile = typeof testInfo === 'object' ? testInfo.file : 'Unknown';
-          const executionCount = typeof testInfo === 'object' ? testInfo.executionCount : 1;
-          const trackingType = typeof testInfo === 'object' && testInfo.type === 'precise' ? '✅ PRECISE' : '⚠️ ESTIMATED';
+        uniqueTests.forEach((testInfo) => {
+          const testName =
+            typeof testInfo === "string" ? testInfo : testInfo.name;
+          const testFile =
+            typeof testInfo === "object" ? testInfo.file : "Unknown";
+          const executionCount =
+            typeof testInfo === "object" ? testInfo.executionCount : 1;
+          const trackingType =
+            typeof testInfo === "object" && testInfo.type === "precise"
+              ? "✅ PRECISE"
+              : "⚠️ ESTIMATED";
 
           // Add depth information for precise tracking
-          let depthInfo = '';
-          if (typeof testInfo === 'object' && testInfo.type === 'precise' && testInfo.depthData) {
-            const depths = Object.keys(testInfo.depthData).map(d => parseInt(d)).sort((a, b) => a - b);
+          let depthInfo = "";
+          if (
+            typeof testInfo === "object" &&
+            testInfo.type === "precise" &&
+            testInfo.depthData
+          ) {
+            const depths = Object.keys(testInfo.depthData)
+              .map((d) => parseInt(d))
+              .sort((a, b) => a - b);
             if (depths.length === 1) {
               depthInfo = `, depth ${depths[0]}`;
             } else {
-              depthInfo = `, depths ${depths.join(',')}`;
+              depthInfo = `, depths ${depths.join(",")}`;
             }
           }
 
           // Add performance information for precise tracking
-          let performanceInfo = '';
-          if (typeof testInfo === 'object' && testInfo.type === 'precise' && testInfo.performance) {
+          let performanceInfo = "";
+          if (
+            typeof testInfo === "object" &&
+            testInfo.type === "precise" &&
+            testInfo.performance
+          ) {
             const perf = testInfo.performance;
             if (perf.avgCpuCycles > 0) {
-              const cycles = perf.avgCpuCycles > 1000000 ?
-                `${(perf.avgCpuCycles / 1000000).toFixed(1)}M` :
-                `${Math.round(perf.avgCpuCycles)}`;
-              const cpuTime = perf.avgCpuTime > 1000 ?
-                `${(perf.avgCpuTime / 1000).toFixed(2)}ms` :
-                `${perf.avgCpuTime.toFixed(1)}μs`;
+              const cycles =
+                perf.avgCpuCycles > 1000000
+                  ? `${(perf.avgCpuCycles / 1000000).toFixed(1)}M`
+                  : `${Math.round(perf.avgCpuCycles)}`;
+              const cpuTime =
+                perf.avgCpuTime > 1000
+                  ? `${(perf.avgCpuTime / 1000).toFixed(2)}ms`
+                  : `${perf.avgCpuTime.toFixed(1)}μs`;
 
               // Add memory information
-              let memoryInfo = '';
+              let memoryInfo = "";
               if (perf.totalMemoryDelta !== 0) {
-                const memoryMB = Math.abs(perf.totalMemoryDelta) / (1024 * 1024);
-                const memorySign = perf.totalMemoryDelta > 0 ? '+' : '-';
+                const memoryMB =
+                  Math.abs(perf.totalMemoryDelta) / (1024 * 1024);
+                const memorySign = perf.totalMemoryDelta > 0 ? "+" : "-";
                 if (memoryMB > 1) {
                   memoryInfo = `, ${memorySign}${memoryMB.toFixed(1)}MB`;
                 } else {
@@ -565,65 +770,85 @@ class TestCoverageReporter {
               }
 
               // Add performance alerts
-              let alerts = '';
-              const memoryMB = Math.abs(perf.totalMemoryDelta || 0) / (1024 * 1024);
+              let alerts = "";
+              const memoryMB =
+                Math.abs(perf.totalMemoryDelta || 0) / (1024 * 1024);
               if (memoryMB > 1) alerts += ` 🚨LEAK`;
               if (perf.gcPressure > 5) alerts += ` 🗑️GC`;
-              if (perf.slowExecutions > perf.fastExecutions) alerts += ` 🐌SLOW`;
+              if (perf.slowExecutions > perf.fastExecutions)
+                alerts += ` 🐌SLOW`;
 
               performanceInfo = `, ${cycles} cycles, ${cpuTime}${memoryInfo}${alerts}`;
             }
           }
 
           // Add quality information for precise tracking
-          let qualityInfo = '';
-          if (typeof testInfo === 'object' && testInfo.type === 'precise' && testInfo.quality) {
+          let qualityInfo = "";
+          if (
+            typeof testInfo === "object" &&
+            testInfo.type === "precise" &&
+            testInfo.quality
+          ) {
             const quality = testInfo.quality;
             const qualityBadges = [];
 
             // Quality score with explanation
-            let qualityScore = '';
+            let qualityScore = "";
             if (quality.maintainability >= 80) {
-              qualityScore = '🏆 High Quality';
+              qualityScore = "🏆 High Quality";
             } else if (quality.maintainability >= 60) {
-              qualityScore = '✅ Good Quality';
+              qualityScore = "✅ Good Quality";
             } else if (quality.maintainability >= 40) {
-              qualityScore = '⚠️ Fair Quality';
+              qualityScore = "⚠️ Fair Quality";
             } else {
-              qualityScore = '❌ Poor Quality';
+              qualityScore = "❌ Poor Quality";
             }
-            qualityBadges.push(`${qualityScore} (${Math.round(quality.maintainability)}%)`);
+            qualityBadges.push(
+              `${qualityScore} (${Math.round(quality.maintainability)}%)`,
+            );
 
             // Reliability score
-            if (quality.reliability >= 80) qualityBadges.push(`🛡️ Reliable (${Math.round(quality.reliability)}%)`);
-            else if (quality.reliability >= 60) qualityBadges.push(`🔒 Stable (${Math.round(quality.reliability)}%)`);
-            else qualityBadges.push(`⚠️ Fragile (${Math.round(quality.reliability)}%)`);
+            if (quality.reliability >= 80)
+              qualityBadges.push(
+                `🛡️ Reliable (${Math.round(quality.reliability)}%)`,
+              );
+            else if (quality.reliability >= 60)
+              qualityBadges.push(
+                `🔒 Stable (${Math.round(quality.reliability)}%)`,
+              );
+            else
+              qualityBadges.push(
+                `⚠️ Fragile (${Math.round(quality.reliability)}%)`,
+              );
 
             // Test smells with details
             if (quality.testSmells && quality.testSmells.length > 0) {
-              qualityBadges.push(`🚨 ${quality.testSmells.length} Smells: ${quality.testSmells.join(', ')}`);
+              qualityBadges.push(
+                `🚨 ${quality.testSmells.length} Smells: ${quality.testSmells.join(", ")}`,
+              );
             }
 
             // Positive indicators
-            if (quality.assertions > 5) qualityBadges.push(`🎯 ${quality.assertions} Assertions`);
-            if (quality.errorHandling > 0) qualityBadges.push(`🔒 ${quality.errorHandling} Error Tests`);
-            if (quality.edgeCases > 3) qualityBadges.push(`🎪 ${quality.edgeCases} Edge Cases`);
+            if (quality.assertions > 5)
+              qualityBadges.push(`🎯 ${quality.assertions} Assertions`);
+            if (quality.errorHandling > 0)
+              qualityBadges.push(`🔒 ${quality.errorHandling} Error Tests`);
+            if (quality.edgeCases > 3)
+              qualityBadges.push(`🎪 ${quality.edgeCases} Edge Cases`);
 
             if (qualityBadges.length > 0) {
-              qualityInfo = ` [${qualityBadges.join(', ')}]`;
+              qualityInfo = ` [${qualityBadges.join(", ")}]`;
             }
           }
-
-          // console.log(`    - "${testName}" (${testFile}, ${executionCount} executions${depthInfo}${performanceInfo}) ${trackingType}${qualityInfo}`);
         });
       }
     }
 
-    console.log('\n--- Report End ---');
+    logger.info("\n--- Report End ---");
   }
 
   async generateHtmlReport() {
-    console.log('\n📄 Generating HTML coverage report...');
+    logger.info("\n📄 Generating HTML coverage report...");
 
     let html = this.generateHtmlTemplate();
 
@@ -634,7 +859,10 @@ class TestCoverageReporter {
       try {
         html += await this.generateCodeTreeSection(filePath);
       } catch (error) {
-        console.error(`❌ Error generating section for ${filePath}:`, error.message);
+        logger.error(
+          `❌ Error generating section for ${filePath}:`,
+          error.message,
+        );
         html += this.generateErrorSection(filePath, error.message);
       }
     }
@@ -642,11 +870,13 @@ class TestCoverageReporter {
     html += this.generateHtmlFooter();
 
     // Write HTML file
-    const outputPath = path.join(process.cwd(), 'test-lineage-report.html');
-    fs.writeFileSync(outputPath, html, 'utf8');
+    const outputPath = path.join(process.cwd(), "test-lineage-report.html");
+    fs.writeFileSync(outputPath, html, "utf8");
 
-    console.log(`✅ HTML report generated: ${outputPath}`);
-    console.log('🌐 Open the file in your browser to view the visual coverage report');
+    logger.info(`✅ HTML report generated: ${outputPath}`);
+    logger.info(
+      "🌐 Open the file in your browser to view the visual coverage report",
+    );
   }
 
   validateCoverageData() {
@@ -656,17 +886,19 @@ class TestCoverageReporter {
       const fileData = this.coverageData[filePath];
 
       if (!fileData) {
-        console.warn(`⚠️ Skipping ${filePath}: No coverage data`);
+        logger.warn(`⚠️ Skipping ${filePath}: No coverage data`);
         continue;
       }
 
-      if (typeof fileData !== 'object') {
-        console.warn(`⚠️ Skipping ${filePath}: Invalid data type (${typeof fileData})`);
+      if (typeof fileData !== "object") {
+        logger.warn(
+          `⚠️ Skipping ${filePath}: Invalid data type (${typeof fileData})`,
+        );
         continue;
       }
 
       if (Object.keys(fileData).length === 0) {
-        console.warn(`⚠️ Skipping ${filePath}: Empty coverage data`);
+        logger.warn(`⚠️ Skipping ${filePath}: Empty coverage data`);
         continue;
       }
 
@@ -681,14 +913,13 @@ class TestCoverageReporter {
       }
 
       if (!hasValidData) {
-        console.warn(`⚠️ Skipping ${filePath}: No valid line data found`);
+        logger.warn(`⚠️ Skipping ${filePath}: No valid line data found`);
         continue;
       }
 
       validFiles.push(filePath);
     }
 
-    // console.log(`✅ Validated ${validFiles.length} files for HTML report`);
     return validFiles;
   }
 
@@ -707,7 +938,10 @@ class TestCoverageReporter {
     const targetRelative = this.makeRelativeToProject(targetPath, projectRoot);
 
     for (const coveragePath of Object.keys(this.coverageData)) {
-      const coverageRelative = this.makeRelativeToProject(coveragePath, projectRoot);
+      const coverageRelative = this.makeRelativeToProject(
+        coveragePath,
+        projectRoot,
+      );
       if (targetRelative === coverageRelative) {
         return coveragePath;
       }
@@ -745,7 +979,7 @@ class TestCoverageReporter {
     const root = path.parse(currentDir).root;
 
     while (currentDir !== root) {
-      const packageJsonPath = path.join(currentDir, 'package.json');
+      const packageJsonPath = path.join(currentDir, "package.json");
       if (fs.existsSync(packageJsonPath)) {
         return currentDir;
       }
@@ -769,7 +1003,7 @@ class TestCoverageReporter {
 
     // Try to find common base with project root
     const relativePath = path.relative(projectRoot, filePath);
-    if (!relativePath.startsWith('..')) {
+    if (!relativePath.startsWith("..")) {
       return relativePath;
     }
 
@@ -780,14 +1014,14 @@ class TestCoverageReporter {
   normalizePath(filePath) {
     // Remove common path variations that might cause mismatches
     return filePath
-      .replace(/\/services\//g, '/')  // Remove /services/ directory
-      .replace(/\/src\//g, '/')       // Remove /src/ directory
-      .replace(/\/lib\//g, '/')       // Remove /lib/ directory
-      .replace(/\/app\//g, '/')       // Remove /app/ directory
-      .replace(/\/server\//g, '/')    // Remove /server/ directory
-      .replace(/\/client\//g, '/')    // Remove /client/ directory
-      .replace(/\/+/g, '/')           // Replace multiple slashes with single
-      .toLowerCase();                 // Case insensitive matching
+      .replace(/\/services\//g, "/") // Remove /services/ directory
+      .replace(/\/src\//g, "/") // Remove /src/ directory
+      .replace(/\/lib\//g, "/") // Remove /lib/ directory
+      .replace(/\/app\//g, "/") // Remove /app/ directory
+      .replace(/\/server\//g, "/") // Remove /server/ directory
+      .replace(/\/client\//g, "/") // Remove /client/ directory
+      .replace(/\/+/g, "/") // Replace multiple slashes with single
+      .toLowerCase(); // Case insensitive matching
   }
 
   generateErrorSection(filePath, errorMessage) {
@@ -1781,15 +2015,18 @@ class TestCoverageReporter {
     try {
       // Check if file exists first
       if (!fs.existsSync(filePath)) {
-        console.warn(`⚠️ File not found: ${filePath}`);
+        logger.warn(`⚠️ File not found: ${filePath}`);
 
         // Try to find the file with alternative paths
         const alternativePaths = this.findAlternativeFilePaths(filePath);
         if (alternativePaths.length > 0) {
-          console.log(`🔍 Trying alternative paths for ${path.basename(filePath)}:`, alternativePaths);
+          logger.debug(
+            `🔍 Trying alternative paths for ${path.basename(filePath)}:`,
+            alternativePaths,
+          );
           for (const altPath of alternativePaths) {
             if (fs.existsSync(altPath)) {
-              console.log(`✅ Found file at: ${altPath}`);
+              logger.info(`✅ Found file at: ${altPath}`);
               return this.generateCodeTreeSection(altPath); // Recursive call with found path
             }
           }
@@ -1799,57 +2036,67 @@ class TestCoverageReporter {
           <div class="file-header">❌ Error reading ${path.basename(filePath)}</div>
           <div class="error">
             <p><strong>File not found:</strong> ${filePath}</p>
-            <p><strong>Tried alternatives:</strong> ${alternativePaths.slice(0, 3).join(', ')}</p>
+            <p><strong>Tried alternatives:</strong> ${alternativePaths.slice(0, 3).join(", ")}</p>
             <p><strong>Suggestion:</strong> Check your project structure and source directory configuration.</p>
           </div>
         </div>`;
       }
 
       // Read the source file content
-      const sourceCode = fs.readFileSync(filePath, 'utf8');
-      const lines = sourceCode.split('\n');
+      const sourceCode = fs.readFileSync(filePath, "utf8");
+      const lines = sourceCode.split("\n");
 
       // Check if we have coverage data for this file
       let lineCoverage = this.coverageData[filePath];
       let actualFilePath = filePath;
 
-      if (!lineCoverage || typeof lineCoverage !== 'object') {
+      if (!lineCoverage || typeof lineCoverage !== "object") {
         // Try to find coverage data with smart path matching
         const matchedPath = this.findMatchingCoveragePath(filePath);
         if (matchedPath) {
-          console.log(`🔧 Path mismatch resolved: "${filePath}" -> "${matchedPath}"`);
+          logger.debug(
+            `🔧 Path mismatch resolved: "${filePath}" -> "${matchedPath}"`,
+          );
           lineCoverage = this.coverageData[matchedPath];
           actualFilePath = matchedPath;
         }
       }
 
-      if (!lineCoverage || typeof lineCoverage !== 'object') {
-        console.warn(`⚠️ No coverage data found for: ${filePath}`);
+      if (!lineCoverage || typeof lineCoverage !== "object") {
+        logger.warn(`⚠️ No coverage data found for: ${filePath}`);
 
         // Debug: Log all available coverage data
         // Debug logging removed for production
 
-        console.log(`🔍 DEBUG: Looking for: "${filePath}"`);
-        console.log(`🔍 DEBUG: Exact match exists: ${this.coverageData.hasOwnProperty(filePath)}`);
+        logger.debug(`🔍 DEBUG: Looking for: "${filePath}"`);
+        logger.debug(
+          `🔍 DEBUG: Exact match exists: ${this.coverageData.hasOwnProperty(filePath)}`,
+        );
 
         // Check for similar paths
-        const similarPaths = Object.keys(this.coverageData).filter(key =>
-          key.includes(path.basename(filePath)) || filePath.includes(path.basename(key))
+        const similarPaths = Object.keys(this.coverageData).filter(
+          (key) =>
+            key.includes(path.basename(filePath)) ||
+            filePath.includes(path.basename(key)),
         );
         if (similarPaths.length > 0) {
-          console.log(`🔍 DEBUG: Similar paths found:`, similarPaths);
+          logger.debug(`🔍 DEBUG: Similar paths found:`, similarPaths);
         }
 
         // Log the actual data structure for the first few files
-        console.log(`🔍 DEBUG: Sample coverage data structure:`);
-        Object.entries(this.coverageData).slice(0, 2).forEach(([key, value]) => {
-          console.log(`  File: ${key}`);
-          console.log(`  Type: ${typeof value}, Keys: ${value ? Object.keys(value).length : 'N/A'}`);
-          if (value && typeof value === 'object') {
-            const sampleLines = Object.keys(value).slice(0, 3);
-            console.log(`  Sample lines: ${sampleLines.join(', ')}`);
-          }
-        });
+        logger.debug(`🔍 DEBUG: Sample coverage data structure:`);
+        Object.entries(this.coverageData)
+          .slice(0, 2)
+          .forEach(([key, value]) => {
+            logger.debug(`  File: ${key}`);
+            logger.debug(
+              `  Type: ${typeof value}, Keys: ${value ? Object.keys(value).length : "N/A"}`,
+            );
+            if (value && typeof value === "object") {
+              const sampleLines = Object.keys(value).slice(0, 3);
+              logger.debug(`  Sample lines: ${sampleLines.join(", ")}`);
+            }
+          });
 
         return `<div class="file-section">
           <div class="file-header">❌ Error reading ${path.basename(filePath)}</div>
@@ -1857,32 +2104,37 @@ class TestCoverageReporter {
             <p><strong>File:</strong> ${filePath}</p>
             <p><strong>Error:</strong> No coverage data available</p>
             <p><strong>Available files:</strong> ${Object.keys(this.coverageData).length} files tracked</p>
-            <p><strong>Similar paths:</strong> ${similarPaths.length > 0 ? similarPaths.join(', ') : 'None found'}</p>
+            <p><strong>Similar paths:</strong> ${similarPaths.length > 0 ? similarPaths.join(", ") : "None found"}</p>
             <p><strong>Suggestion:</strong> Make sure the file is being instrumented and tests are running.</p>
           </div>
         </div>`;
       }
 
-      const coveredLineNumbers = Object.keys(lineCoverage).map(n => parseInt(n));
+      const coveredLineNumbers = Object.keys(lineCoverage).map((n) =>
+        parseInt(n),
+      );
 
       // Calculate stats for this file
       const totalLines = lines.length;
       const coveredLines = coveredLineNumbers.length;
       const totalTests = new Set();
-      Object.values(lineCoverage).forEach(tests => {
+      Object.values(lineCoverage).forEach((tests) => {
         if (Array.isArray(tests)) {
-          tests.forEach(test => totalTests.add(test));
+          tests.forEach((test) => totalTests.add(test.name || test));
         }
       });
 
-      const fileId = actualFilePath.replace(/[^a-zA-Z0-9]/g, '_');
+      const fileId = actualFilePath.replace(/[^a-zA-Z0-9]/g, "_");
+      const displayPath = filePath.startsWith(process.cwd())
+        ? path.relative(process.cwd(), filePath)
+        : filePath;
 
       let html = `
     <div class="file-section">
         <div class="file-header" onclick="toggleFile('${fileId}')">
             <div>
                 📄 ${path.basename(filePath)}
-                <div class="file-path">${filePath}</div>
+                <div class="file-path">${displayPath}</div>
             </div>
             <span class="expand-icon">▶</span>
         </div>
@@ -1908,13 +2160,33 @@ class TestCoverageReporter {
       // Generate each line of code
       lines.forEach((lineContent, index) => {
         const lineNumber = index + 1;
-        const isCovered = coveredLineNumbers.includes(lineNumber);
-        const lineNumberClass = isCovered ? 'line-covered' : 'line-uncovered';
+        let isCovered = coveredLineNumbers.includes(lineNumber);
+
+        // Mark function declaration lines as implicitly covered when their body is covered
+        if (!isCovered && lineContent) {
+          const trimmed = lineContent.trim();
+          const isFuncDecl =
+            /^\s*(export\s+)?(async\s+)?function\s+\w+/.test(trimmed) ||
+            /^\s*(export\s+)?(const|let|var)\s+\w+\s*=\s*(async\s+)?\(/.test(
+              trimmed,
+            );
+          if (isFuncDecl) {
+            // Check if any of the next 3 lines are covered (function body)
+            for (let offset = 1; offset <= 3; offset++) {
+              if (coveredLineNumbers.includes(lineNumber + offset)) {
+                isCovered = true;
+                break;
+              }
+            }
+          }
+        }
+
+        const lineNumberClass = isCovered ? "line-covered" : "line-uncovered";
 
         html += `
             <div class="code-line">
                 <div class="line-number ${lineNumberClass}">${lineNumber}</div>
-                <div class="line-content">${this.escapeHtml(lineContent || ' ')}</div>`;
+                <div class="line-content">${this.escapeHtml(lineContent || " ")}</div>`;
 
         if (isCovered) {
           const testInfos = lineCoverage[lineNumber];
@@ -1922,7 +2194,7 @@ class TestCoverageReporter {
             const uniqueTests = this.deduplicateTests(testInfos);
             html += `
                 <div class="coverage-indicator" onclick="toggleCoverage(${lineNumber}, '${fileId}')">
-                    ${uniqueTests.length} test${uniqueTests.length !== 1 ? 's' : ''}
+                    ${uniqueTests.length} test${uniqueTests.length !== 1 ? "s" : ""}
                 </div>`;
           } else {
             html += `
@@ -1948,45 +2220,68 @@ class TestCoverageReporter {
             const testsByFile = this.groupTestInfosByFile(uniqueTests);
 
             // Get mutation results for this line
-            const mutationResults = this.getMutationResultsForLine(actualFilePath, lineNumber);
+            const mutationResults = this.getMutationResultsForLine(
+              actualFilePath,
+              lineNumber,
+            );
 
             html += `
             <div id="details-${fileId}-${lineNumber}" class="coverage-details">
-                <strong>Line ${lineNumber} is covered by ${uniqueTests.length} test${uniqueTests.length !== 1 ? 's' : ''}:</strong>`;
+                <strong>Line ${lineNumber} is covered by ${uniqueTests.length} test${uniqueTests.length !== 1 ? "s" : ""}:</strong>`;
 
             // Add mutation testing results if available
             if (mutationResults && mutationResults.length > 0) {
-              html += this.generateMutationResultsHtml(mutationResults, lineNumber);
+              html += this.generateMutationResultsHtml(
+                mutationResults,
+                lineNumber,
+              );
             }
 
             for (const [testFile, tests] of Object.entries(testsByFile)) {
               if (tests && Array.isArray(tests)) {
                 html += `
                 <div class="test-file">📁 ${testFile}</div>`;
-                tests.forEach(testInfo => {
+                tests.forEach((testInfo) => {
                   if (testInfo) {
-                    const testName = typeof testInfo === 'string' ? testInfo : (testInfo.name || 'Unknown test');
-                    const executionCount = typeof testInfo === 'object' ? (testInfo.executionCount || 1) : 1;
-                    const trackingType = typeof testInfo === 'object' && testInfo.type === 'precise' ? 'PRECISE' : 'ESTIMATED';
+                    const testName =
+                      typeof testInfo === "string"
+                        ? testInfo
+                        : testInfo.name || "Unknown test";
+                    const executionCount =
+                      typeof testInfo === "object"
+                        ? testInfo.executionCount || 1
+                        : 1;
+                    const trackingType =
+                      typeof testInfo === "object" &&
+                      testInfo.type === "precise"
+                        ? "PRECISE"
+                        : "ESTIMATED";
 
                     // Generate depth information
-                    let depthInfo = '';
-                    let depthBadge = '';
-                    if (typeof testInfo === 'object' && testInfo.type === 'precise' && testInfo.depthData) {
-                      const depths = Object.keys(testInfo.depthData).map(d => parseInt(d)).sort((a, b) => a - b);
+                    let depthInfo = "";
+                    let depthBadge = "";
+                    if (
+                      typeof testInfo === "object" &&
+                      testInfo.type === "precise" &&
+                      testInfo.depthData
+                    ) {
+                      const depths = Object.keys(testInfo.depthData)
+                        .map((d) => parseInt(d))
+                        .sort((a, b) => a - b);
                       const minDepth = Math.min(...depths);
 
                       if (depths.length === 1) {
                         depthInfo = `, depth ${depths[0]}`;
                         depthBadge = `<span class="depth-badge depth-${minDepth}">D${minDepth}</span>`;
                       } else {
-                        depthInfo = `, depths ${depths.join(',')}`;
-                        depthBadge = `<span class="depth-badge depth-${minDepth}">D${depths.join(',')}</span>`;
+                        depthInfo = `, depths ${depths.join(",")}`;
+                        depthBadge = `<span class="depth-badge depth-${minDepth}">D${depths.join(",")}</span>`;
                       }
                     }
 
-                    const badgeColor = trackingType === 'PRECISE' ? '#28a745' : '#ffc107';
-                    const icon = trackingType === 'PRECISE' ? '✅' : '⚠️';
+                    const badgeColor =
+                      trackingType === "PRECISE" ? "#28a745" : "#ffc107";
+                    const icon = trackingType === "PRECISE" ? "✅" : "⚠️";
 
                     html += `<span class="test-badge"
                          style="background-color: ${badgeColor};"
@@ -1998,8 +2293,7 @@ class TestCoverageReporter {
           } else {
             html += `
             <div id="details-${fileId}-${lineNumber}" class="coverage-details">
-                <strong>Line ${lineNumber}: No valid test data available</strong>
-            </div>`;
+                <strong>Line ${lineNumber}: No valid test data available</strong>`;
           }
 
           html += `
@@ -2014,7 +2308,7 @@ class TestCoverageReporter {
 
       return html;
     } catch (error) {
-      console.error(`Error reading file ${filePath}:`, error.message);
+      logger.error(`Error reading file ${filePath}:`, error.message);
       return `<div class="file-section">
         <div class="file-header">❌ Error reading ${path.basename(filePath)}</div>
         <div class="error">
@@ -2028,17 +2322,17 @@ class TestCoverageReporter {
 
   escapeHtml(text) {
     return text
-      .replace(/&/g, '&amp;')
-      .replace(/</g, '&lt;')
-      .replace(/>/g, '&gt;')
-      .replace(/"/g, '&quot;')
-      .replace(/'/g, '&#39;');
+      .replace(/&/g, "&amp;")
+      .replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;")
+      .replace(/"/g, "&quot;")
+      .replace(/'/g, "&#39;");
   }
 
   deduplicateTests(testInfos) {
     const seen = new Set();
-    return testInfos.filter(testInfo => {
-      const key = typeof testInfo === 'string' ? testInfo : testInfo.name;
+    return testInfos.filter((testInfo) => {
+      const key = typeof testInfo === "string" ? testInfo : testInfo.name;
       if (seen.has(key)) {
         return false;
       }
@@ -2049,8 +2343,8 @@ class TestCoverageReporter {
 
   groupTestInfosByFile(tests) {
     const grouped = {};
-    tests.forEach(testInfo => {
-      const testFile = typeof testInfo === 'string' ? 'Unknown' : testInfo.file;
+    tests.forEach((testInfo) => {
+      const testFile = typeof testInfo === "string" ? "Unknown" : testInfo.file;
 
       if (!grouped[testFile]) grouped[testFile] = [];
       grouped[testFile].push(testInfo);
@@ -2059,22 +2353,25 @@ class TestCoverageReporter {
   }
 
   getConfidenceColor(confidence) {
-    if (confidence >= 80) return '#28a745'; // Green - high confidence
-    if (confidence >= 60) return '#ffc107'; // Yellow - medium confidence
-    if (confidence >= 40) return '#fd7e14'; // Orange - low confidence
-    return '#dc3545'; // Red - very low confidence
+    if (confidence >= 80) return "#28a745"; // Green - high confidence
+    if (confidence >= 60) return "#ffc107"; // Yellow - medium confidence
+    if (confidence >= 40) return "#fd7e14"; // Orange - low confidence
+    return "#dc3545"; // Red - very low confidence
   }
 
   groupTestsByFile(tests) {
     const grouped = {};
-    tests.forEach(testName => {
+    tests.forEach((testName) => {
       // Extract test file from test name based on describe block patterns
-      let testFile = 'Unknown';
+      let testFile = "Unknown";
 
-      if (testName.includes('Calculator')) testFile = 'calculator.test.ts';
-      else if (testName.includes('Add Function Only')) testFile = 'add-only.test.ts';
-      else if (testName.includes('Multiply Function Only')) testFile = 'multiply-only.test.ts';
-      else if (testName.includes('Subtract Function Only')) testFile = 'subtract-only.test.ts';
+      if (testName.includes("Calculator")) testFile = "calculator.test.ts";
+      else if (testName.includes("Add Function Only"))
+        testFile = "add-only.test.ts";
+      else if (testName.includes("Multiply Function Only"))
+        testFile = "multiply-only.test.ts";
+      else if (testName.includes("Subtract Function Only"))
+        testFile = "subtract-only.test.ts";
 
       if (!grouped[testFile]) grouped[testFile] = [];
       grouped[testFile].push(testName);
@@ -2130,13 +2427,29 @@ class TestCoverageReporter {
 
   shouldSkipDirectory(dirName) {
     const skipPatterns = [
-      'node_modules', '.git', '.next', '.nuxt', 'dist', 'build',
-      'coverage', '.nyc_output', 'tmp', 'temp', '.cache',
-      '.vscode', '.idea', '__pycache__', '.pytest_cache',
-      'vendor', 'target', 'bin', 'obj', '.DS_Store'
+      "node_modules",
+      ".git",
+      ".next",
+      ".nuxt",
+      "dist",
+      "build",
+      "coverage",
+      ".nyc_output",
+      "tmp",
+      "temp",
+      ".cache",
+      ".vscode",
+      ".idea",
+      "__pycache__",
+      ".pytest_cache",
+      "vendor",
+      "target",
+      "bin",
+      "obj",
+      ".DS_Store",
     ];
 
-    return skipPatterns.includes(dirName) || dirName.startsWith('.');
+    return skipPatterns.includes(dirName) || dirName.startsWith(".");
   }
 
   getPathScore(filePath) {
@@ -2147,7 +2460,14 @@ class TestCoverageReporter {
     score += Math.max(0, 10 - pathParts.length);
 
     // Prefer common source directory names
-    const sourcePreference = ['src', 'lib', 'source', 'app', 'server', 'client'];
+    const sourcePreference = [
+      "src",
+      "lib",
+      "source",
+      "app",
+      "server",
+      "client",
+    ];
     for (const part of pathParts) {
       const index = sourcePreference.indexOf(part);
       if (index !== -1) {
@@ -2156,7 +2476,7 @@ class TestCoverageReporter {
     }
 
     // Bonus for TypeScript files
-    if (filePath.endsWith('.ts') || filePath.endsWith('.tsx')) {
+    if (filePath.endsWith(".ts") || filePath.endsWith(".tsx")) {
       score += 2;
     }
 
@@ -2164,8 +2484,8 @@ class TestCoverageReporter {
   }
 
   generateTestQualitySummary() {
-    console.log('\n🧪 TEST QUALITY & PERFORMANCE ANALYSIS');
-    console.log('=' .repeat(60));
+    logger.info("\n🧪 TEST QUALITY & PERFORMANCE ANALYSIS");
+    logger.info("=".repeat(60));
 
     const qualityStats = {
       totalTests: 0,
@@ -2179,7 +2499,7 @@ class TestCoverageReporter {
       slowTests: 0,
       reliableTests: 0,
       totalAssertions: 0,
-      totalComplexity: 0
+      totalComplexity: 0,
     };
 
     const testSmellTypes = {};
@@ -2192,14 +2512,16 @@ class TestCoverageReporter {
         const tests = lineCoverage[lineNumber];
         if (!Array.isArray(tests)) continue;
 
-        tests.forEach(test => {
-          if (test.type === 'precise' && test.quality) {
+        tests.forEach((test) => {
+          if (test.type === "precise" && test.quality) {
             qualityStats.totalTests++;
 
             // Quality classification
             if (test.quality.maintainability >= 80) qualityStats.highQuality++;
-            else if (test.quality.maintainability >= 60) qualityStats.goodQuality++;
-            else if (test.quality.maintainability >= 40) qualityStats.fairQuality++;
+            else if (test.quality.maintainability >= 60)
+              qualityStats.goodQuality++;
+            else if (test.quality.maintainability >= 40)
+              qualityStats.fairQuality++;
             else qualityStats.poorQuality++;
 
             // Reliability
@@ -2208,7 +2530,7 @@ class TestCoverageReporter {
             // Test smells
             if (test.quality.testSmells) {
               qualityStats.totalSmells += test.quality.testSmells.length;
-              test.quality.testSmells.forEach(smell => {
+              test.quality.testSmells.forEach((smell) => {
                 testSmellTypes[smell] = (testSmellTypes[smell] || 0) + 1;
               });
             }
@@ -2216,22 +2538,34 @@ class TestCoverageReporter {
             // Performance issues - check for large memory allocations
             if (test.performance) {
               // Check for memory leaks (large allocations)
-              const memoryMB = Math.abs(test.performance.totalMemoryDelta || 0) / (1024 * 1024);
-              if (memoryMB > 1) { // > 1MB
+              const memoryMB =
+                Math.abs(test.performance.totalMemoryDelta || 0) /
+                (1024 * 1024);
+              if (memoryMB > 1) {
+                // > 1MB
                 qualityStats.memoryLeaks++;
-                performanceIssues.push(`${test.name}: Large memory allocation (${memoryMB.toFixed(1)}MB)`);
+                performanceIssues.push(
+                  `${test.name}: Large memory allocation (${memoryMB.toFixed(1)}MB)`,
+                );
               }
 
               // Check for GC pressure
               if (test.performance.gcPressure > 5) {
                 qualityStats.gcPressure++;
-                performanceIssues.push(`${test.name}: High GC pressure (${test.performance.gcPressure})`);
+                performanceIssues.push(
+                  `${test.name}: High GC pressure (${test.performance.gcPressure})`,
+                );
               }
 
               // Check for slow executions
-              if (test.performance.slowExecutions > test.performance.fastExecutions) {
+              if (
+                test.performance.slowExecutions >
+                test.performance.fastExecutions
+              ) {
                 qualityStats.slowTests++;
-                performanceIssues.push(`${test.name}: Inconsistent performance`);
+                performanceIssues.push(
+                  `${test.name}: Inconsistent performance`,
+                );
               }
             }
 
@@ -2243,72 +2577,108 @@ class TestCoverageReporter {
     }
 
     // Display quality summary
-    console.log(`\n📊 QUALITY DISTRIBUTION (${qualityStats.totalTests} tests analyzed):`);
-    console.log(`  🏆 High Quality (80-100%): ${qualityStats.highQuality} tests (${((qualityStats.highQuality/qualityStats.totalTests)*100).toFixed(1)}%)`);
-    console.log(`  ✅ Good Quality (60-79%):  ${qualityStats.goodQuality} tests (${((qualityStats.goodQuality/qualityStats.totalTests)*100).toFixed(1)}%)`);
-    console.log(`  ⚠️ Fair Quality (40-59%):  ${qualityStats.fairQuality} tests (${((qualityStats.fairQuality/qualityStats.totalTests)*100).toFixed(1)}%)`);
-    console.log(`  ❌ Poor Quality (0-39%):   ${qualityStats.poorQuality} tests (${((qualityStats.poorQuality/qualityStats.totalTests)*100).toFixed(1)}%)`);
+    logger.info(
+      `\n📊 QUALITY DISTRIBUTION (${qualityStats.totalTests} tests analyzed):`,
+    );
+    logger.info(
+      `  🏆 High Quality (80-100%): ${qualityStats.highQuality} tests (${((qualityStats.highQuality / qualityStats.totalTests) * 100).toFixed(1)}%)`,
+    );
+    logger.info(
+      `  ✅ Good Quality (60-79%):  ${qualityStats.goodQuality} tests (${((qualityStats.goodQuality / qualityStats.totalTests) * 100).toFixed(1)}%)`,
+    );
+    logger.info(
+      `  ⚠️ Fair Quality (40-59%):  ${qualityStats.fairQuality} tests (${((qualityStats.fairQuality / qualityStats.totalTests) * 100).toFixed(1)}%)`,
+    );
+    logger.info(
+      `  ❌ Poor Quality (0-39%):   ${qualityStats.poorQuality} tests (${((qualityStats.poorQuality / qualityStats.totalTests) * 100).toFixed(1)}%)`,
+    );
 
-    console.log(`\n🛡️ RELIABILITY METRICS:`);
-    console.log(`  🔒 Reliable Tests: ${qualityStats.reliableTests}/${qualityStats.totalTests} (${((qualityStats.reliableTests/qualityStats.totalTests)*100).toFixed(1)}%)`);
-    console.log(`  🎯 Total Assertions: ${qualityStats.totalAssertions} (avg: ${(qualityStats.totalAssertions/qualityStats.totalTests).toFixed(1)} per test)`);
-    console.log(`  🔧 Total Complexity: ${qualityStats.totalComplexity} (avg: ${(qualityStats.totalComplexity/qualityStats.totalTests).toFixed(1)} per test)`);
+    logger.info(`\n🛡️ RELIABILITY METRICS:`);
+    logger.info(
+      `  🔒 Reliable Tests: ${qualityStats.reliableTests}/${qualityStats.totalTests} (${((qualityStats.reliableTests / qualityStats.totalTests) * 100).toFixed(1)}%)`,
+    );
+    logger.info(
+      `  🎯 Total Assertions: ${qualityStats.totalAssertions} (avg: ${(qualityStats.totalAssertions / qualityStats.totalTests).toFixed(1)} per test)`,
+    );
+    logger.info(
+      `  🔧 Total Complexity: ${qualityStats.totalComplexity} (avg: ${(qualityStats.totalComplexity / qualityStats.totalTests).toFixed(1)} per test)`,
+    );
 
     // Test smells breakdown
     if (qualityStats.totalSmells > 0) {
-      console.log(`\n🚨 TEST SMELLS DETECTED (${qualityStats.totalSmells} total):`);
+      logger.info(
+        `\n🚨 TEST SMELLS DETECTED (${qualityStats.totalSmells} total):`,
+      );
       Object.entries(testSmellTypes).forEach(([smell, count]) => {
-        console.log(`  • ${smell}: ${count} occurrences`);
+        logger.info(`  • ${smell}: ${count} occurrences`);
       });
 
-      console.log(`\n💡 HOW TO IMPROVE TEST SCORES:`);
-      if (testSmellTypes['Long Test']) {
-        console.log(`  📏 Long Tests: Break down tests >50 lines into smaller, focused tests`);
+      logger.info(`\n💡 HOW TO IMPROVE TEST SCORES:`);
+      if (testSmellTypes["Long Test"]) {
+        logger.info(
+          `  📏 Long Tests: Break down tests >50 lines into smaller, focused tests`,
+        );
       }
-      if (testSmellTypes['No Assertions']) {
-        console.log(`  🎯 No Assertions: Add expect() statements to verify behavior`);
+      if (testSmellTypes["No Assertions"]) {
+        logger.info(
+          `  🎯 No Assertions: Add expect() statements to verify behavior`,
+        );
       }
-      if (testSmellTypes['Too Many Assertions']) {
-        console.log(`  🔢 Too Many Assertions: Split tests with >10 assertions into separate test cases`);
+      if (testSmellTypes["Too Many Assertions"]) {
+        logger.info(
+          `  🔢 Too Many Assertions: Split tests with >10 assertions into separate test cases`,
+        );
       }
-      if (testSmellTypes['Excessive Mocking']) {
-        console.log(`  🎭 Excessive Mocking: Reduce mocks >5 per test, consider integration testing`);
+      if (testSmellTypes["Excessive Mocking"]) {
+        logger.info(
+          `  🎭 Excessive Mocking: Reduce mocks >5 per test, consider integration testing`,
+        );
       }
-      if (testSmellTypes['Sleep/Wait Usage']) {
-        console.log(`  ⏰ Sleep/Wait Usage: Replace with proper async/await or mock timers`);
+      if (testSmellTypes["Sleep/Wait Usage"]) {
+        logger.info(
+          `  ⏰ Sleep/Wait Usage: Replace with proper async/await or mock timers`,
+        );
       }
     }
 
     // Performance issues
     if (performanceIssues.length > 0) {
-      console.log(`\n🔥 PERFORMANCE ISSUES DETECTED:`);
-      console.log(`  🚨 Memory Leaks: ${qualityStats.memoryLeaks} tests`);
-      console.log(`  🗑️ GC Pressure: ${qualityStats.gcPressure} tests`);
-      console.log(`  🐌 Slow Tests: ${qualityStats.slowTests} tests`);
+      logger.info(`\n🔥 PERFORMANCE ISSUES DETECTED:`);
+      logger.info(`  🚨 Memory Leaks: ${qualityStats.memoryLeaks} tests`);
+      logger.info(`  🗑️ GC Pressure: ${qualityStats.gcPressure} tests`);
+      logger.info(`  🐌 Slow Tests: ${qualityStats.slowTests} tests`);
 
-      console.log(`\n⚡ PERFORMANCE RECOMMENDATIONS:`);
+      logger.info(`\n⚡ PERFORMANCE RECOMMENDATIONS:`);
       if (qualityStats.memoryLeaks > 0) {
-        console.log(`  💾 Memory Leaks: Review large object allocations, ensure proper cleanup`);
-        console.log(`     • Look for objects >1MB that aren't being released`);
-        console.log(`     • Check for global variables holding references`);
-        console.log(`     • Ensure event listeners are properly removed`);
+        logger.info(
+          `  💾 Memory Leaks: Review large object allocations, ensure proper cleanup`,
+        );
+        logger.info(`     • Look for objects >1MB that aren't being released`);
+        logger.info(`     • Check for global variables holding references`);
+        logger.info(`     • Ensure event listeners are properly removed`);
       }
       if (qualityStats.gcPressure > 0) {
-        console.log(`  🗑️ GC Pressure: Reduce frequent small allocations, reuse objects`);
-        console.log(`     • Object pooling: Reuse objects instead of creating new ones`);
-        console.log(`     • Batch operations: Process multiple items at once`);
-        console.log(`     • Avoid creating objects in loops`);
-        console.log(`     • Use primitive values when possible`);
+        logger.info(
+          `  🗑️ GC Pressure: Reduce frequent small allocations, reuse objects`,
+        );
+        logger.info(
+          `     • Object pooling: Reuse objects instead of creating new ones`,
+        );
+        logger.info(`     • Batch operations: Process multiple items at once`);
+        logger.info(`     • Avoid creating objects in loops`);
+        logger.info(`     • Use primitive values when possible`);
       }
       if (qualityStats.slowTests > 0) {
-        console.log(`  🐌 Slow Tests: Profile inconsistent tests, optimize heavy operations`);
-        console.log(`     • Use async/await instead of setTimeout`);
-        console.log(`     • Mock heavy operations in tests`);
-        console.log(`     • Reduce test data size`);
+        logger.info(
+          `  🐌 Slow Tests: Profile inconsistent tests, optimize heavy operations`,
+        );
+        logger.info(`     • Use async/await instead of setTimeout`);
+        logger.info(`     • Mock heavy operations in tests`);
+        logger.info(`     • Reduce test data size`);
       }
     }
 
-    console.log('\n' + '=' .repeat(60));
+    logger.info("\n" + "=".repeat(60));
   }
 
   generateLinesData() {
@@ -2343,21 +2713,26 @@ class TestCoverageReporter {
         let fastExecutions = 0;
         let allTestSmells = new Set(); // Collect unique test smells
 
-        tests.forEach(test => {
+        tests.forEach((test) => {
           totalExecutions += test.executionCount || 1;
           if (test.maxDepth) maxDepth = Math.max(maxDepth, test.maxDepth);
           if (test.minDepth) minDepth = Math.min(minDepth, test.minDepth);
           if (test.depthData) {
-            Object.keys(test.depthData).forEach(d => depths.add(parseInt(d)));
+            Object.keys(test.depthData).forEach((d) => depths.add(parseInt(d)));
           }
           if (test.performance) {
             totalCpuCycles += test.performance.totalCpuCycles || 0;
             totalCpuTime += test.performance.totalCpuTime || 0;
             totalWallTime += test.performance.totalWallTime || 0;
-            maxCpuCycles = Math.max(maxCpuCycles, test.performance.avgCpuCycles || 0);
+            maxCpuCycles = Math.max(
+              maxCpuCycles,
+              test.performance.avgCpuCycles || 0,
+            );
 
             // Add memory tracking
-            totalMemoryDelta += Math.abs(test.performance.totalMemoryDelta || 0);
+            totalMemoryDelta += Math.abs(
+              test.performance.totalMemoryDelta || 0,
+            );
             memoryLeaks += test.performance.memoryLeaks || 0;
             gcPressure += test.performance.gcPressure || 0;
             slowExecutions += test.performance.slowExecutions || 0;
@@ -2367,13 +2742,20 @@ class TestCoverageReporter {
             avgQuality += test.quality.maintainability || 0;
             avgReliability += test.quality.reliability || 0;
             avgMaintainability += test.quality.maintainability || 0;
-            totalTestSmells += test.quality.testSmells ? test.quality.testSmells.length : 0;
+            totalTestSmells += test.quality.testSmells
+              ? test.quality.testSmells.length
+              : 0;
             totalAssertions += test.quality.assertions || 0;
             totalComplexity += test.quality.complexity || 0;
 
             // Collect individual test smells
-            if (test.quality.testSmells && Array.isArray(test.quality.testSmells)) {
-              test.quality.testSmells.forEach(smell => allTestSmells.add(smell));
+            if (
+              test.quality.testSmells &&
+              Array.isArray(test.quality.testSmells)
+            ) {
+              test.quality.testSmells.forEach((smell) =>
+                allTestSmells.add(smell),
+              );
             }
           }
         });
@@ -2381,17 +2763,20 @@ class TestCoverageReporter {
         // Calculate averages
         avgQuality = tests.length > 0 ? avgQuality / tests.length : 0;
         avgReliability = tests.length > 0 ? avgReliability / tests.length : 0;
-        avgMaintainability = tests.length > 0 ? avgMaintainability / tests.length : 0;
+        avgMaintainability =
+          tests.length > 0 ? avgMaintainability / tests.length : 0;
 
         // Try to get code preview (simplified)
         let codePreview = `Line ${lineNumber}`;
         try {
           if (fs.existsSync(filePath)) {
-            const content = fs.readFileSync(filePath, 'utf8');
-            const lines = content.split('\n');
+            const content = fs.readFileSync(filePath, "utf8");
+            const lines = content.split("\n");
             const lineIndex = parseInt(lineNumber) - 1;
             if (lineIndex >= 0 && lineIndex < lines.length) {
-              codePreview = lines[lineIndex].trim().substring(0, 50) + (lines[lineIndex].trim().length > 50 ? '...' : '');
+              codePreview =
+                lines[lineIndex].trim().substring(0, 50) +
+                (lines[lineIndex].trim().length > 50 ? "..." : "");
             }
           }
         } catch (error) {
@@ -2399,11 +2784,17 @@ class TestCoverageReporter {
         }
 
         const depthArray = Array.from(depths).sort((a, b) => a - b);
-        const depthRange = depthArray.length > 1 ? `${Math.min(...depthArray)}-${Math.max(...depthArray)}` : `${depthArray[0] || 1}`;
+        const depthRange =
+          depthArray.length > 1
+            ? `${Math.min(...depthArray)}-${Math.max(...depthArray)}`
+            : `${depthArray[0] || 1}`;
 
+        const relPath = filePath.startsWith(process.cwd())
+          ? path.relative(process.cwd(), filePath)
+          : filePath;
         linesData.push({
           fileName: path.basename(filePath),
-          filePath: filePath,
+          filePath: relPath,
           lineNumber: parseInt(lineNumber),
           codePreview: codePreview,
           testCount: tests.length,
@@ -2413,17 +2804,20 @@ class TestCoverageReporter {
           depthRange: depthRange,
           performance: {
             totalCpuCycles: totalCpuCycles,
-            avgCpuCycles: totalExecutions > 0 ? totalCpuCycles / totalExecutions : 0,
+            avgCpuCycles:
+              totalExecutions > 0 ? totalCpuCycles / totalExecutions : 0,
             totalCpuTime: totalCpuTime,
-            avgCpuTime: totalExecutions > 0 ? totalCpuTime / totalExecutions : 0,
+            avgCpuTime:
+              totalExecutions > 0 ? totalCpuTime / totalExecutions : 0,
             totalWallTime: totalWallTime,
-            avgWallTime: totalExecutions > 0 ? totalWallTime / totalExecutions : 0,
+            avgWallTime:
+              totalExecutions > 0 ? totalWallTime / totalExecutions : 0,
             maxCpuCycles: maxCpuCycles,
             totalMemoryDelta: totalMemoryDelta,
             memoryLeaks: memoryLeaks,
             gcPressure: gcPressure,
             slowExecutions: slowExecutions,
-            fastExecutions: fastExecutions
+            fastExecutions: fastExecutions,
           },
           quality: {
             avgQuality: avgQuality,
@@ -2432,9 +2826,10 @@ class TestCoverageReporter {
             totalTestSmells: totalTestSmells,
             totalAssertions: totalAssertions,
             totalComplexity: totalComplexity,
-            qualityScore: (avgQuality + avgReliability + avgMaintainability) / 3,
-            testSmells: Array.from(allTestSmells) // Include the actual smell names
-          }
+            qualityScore:
+              (avgQuality + avgReliability + avgMaintainability) / 3,
+            testSmells: Array.from(allTestSmells), // Include the actual smell names
+          },
         });
       }
     }
@@ -2445,20 +2840,20 @@ class TestCoverageReporter {
   generateHtmlFooter() {
     // Calculate overall stats
     const allFiles = Object.keys(this.coverageData);
-    const totalLines = allFiles.reduce((sum, file) => sum + Object.keys(this.coverageData[file]).length, 0);
+    const totalLines = allFiles.reduce(
+      (sum, file) => sum + Object.keys(this.coverageData[file]).length,
+      0,
+    );
     const uniqueTestNames = new Set();
 
-    allFiles.forEach(file => {
-      Object.values(this.coverageData[file]).forEach(tests => {
-        tests.forEach(test => {
+    allFiles.forEach((file) => {
+      Object.values(this.coverageData[file]).forEach((tests) => {
+        tests.forEach((test) => {
           // Use test name to identify unique tests, not the entire test object
           uniqueTestNames.add(test.name);
         });
       });
     });
-
-    // console.log(`🔍 DEBUG: Total unique test names found: ${uniqueTestNames.size}`);
-    // console.log(`🔍 DEBUG: Test names: ${Array.from(uniqueTestNames).join(', ')}`);
 
     return `
         </div>
@@ -2689,6 +3084,29 @@ class TestCoverageReporter {
             function generatePerformanceDashboard() {
                 const performanceData = window.linesData || [];
 
+                // Check if performance data was actually collected
+                const hasPerformanceData = performanceData.some(line =>
+                    line.performance && (
+                        line.performance.totalCpuCycles > 0 ||
+                        Math.abs(line.performance.totalMemoryDelta || 0) > 0 ||
+                        line.performance.memoryLeaks > 0
+                    )
+                );
+
+                if (!hasPerformanceData) {
+                    document.getElementById('performance-dashboard').innerHTML = \`
+                        <div class="no-data">
+                            <h3>Performance Tracking Not Configured</h3>
+                            <p>No performance data was collected. To enable performance tracking:</p>
+                            <ul style="text-align:left;display:inline-block;">
+                                <li>Add <code>testSetup.js</code> to <code>setupFilesAfterEnv</code> in your Jest config</li>
+                                <li>Set <code>JEST_LINEAGE_PERFORMANCE=true</code> environment variable</li>
+                            </ul>
+                        </div>
+                    \`;
+                    return;
+                }
+
                 // Calculate performance statistics
                 let totalCpuCycles = 0;
                 let totalMemoryUsage = 0;
@@ -2719,16 +3137,6 @@ class TestCoverageReporter {
                     .sort((a, b) => Math.abs(b.performance.totalMemoryDelta || 0) - Math.abs(a.performance.totalMemoryDelta || 0))
                     .slice(0, 10);
 
-                // Debug logging
-                console.log('Performance Dashboard Data:', {
-                    totalLines: performanceData.length,
-                    totalCpuCycles,
-                    totalMemoryUsage,
-                    memoryLeaks,
-                    gcPressureIssues,
-                    slowTests,
-                    sampleLine: performanceData[0]
-                });
 
                 let html = \`
                     <div class="performance-summary">
@@ -2833,6 +3241,29 @@ class TestCoverageReporter {
 
             function generateQualityDashboard() {
                 const qualityData = window.linesData;
+
+                // Check if quality data was actually collected
+                const hasQualityData = qualityData && qualityData.some(line =>
+                    line.quality && (
+                        line.quality.qualityScore > 0 ||
+                        line.quality.totalAssertions > 0 ||
+                        line.quality.totalTestSmells > 0
+                    )
+                );
+
+                if (!hasQualityData) {
+                    document.getElementById('quality-dashboard').innerHTML = \`
+                        <div class="no-data">
+                            <h3>Test Quality Analysis Not Configured</h3>
+                            <p>No quality data was collected. To enable quality analysis:</p>
+                            <ul style="text-align:left;display:inline-block;">
+                                <li>Add <code>testSetup.js</code> to <code>setupFilesAfterEnv</code> in your Jest config</li>
+                                <li>Set <code>JEST_LINEAGE_QUALITY=true</code> environment variable</li>
+                            </ul>
+                        </div>
+                    \`;
+                    return;
+                }
 
                 // Calculate quality statistics
                 let totalTests = 0;
@@ -3191,14 +3622,30 @@ class TestCoverageReporter {
    */
   generateMutationResultsHtml(mutationResults, lineNumber) {
     const totalMutations = mutationResults.length;
-    const killedMutations = mutationResults.filter(m => m.status === 'killed').length;
-    const survivedMutations = mutationResults.filter(m => m.status === 'survived').length;
-    const errorMutations = mutationResults.filter(m => m.status === 'error').length;
-    const timeoutMutations = mutationResults.filter(m => m.status === 'timeout').length;
+    const killedMutations = mutationResults.filter(
+      (m) => m.status === "killed",
+    ).length;
+    const survivedMutations = mutationResults.filter(
+      (m) => m.status === "survived",
+    ).length;
+    const errorMutations = mutationResults.filter(
+      (m) => m.status === "error",
+    ).length;
+    const timeoutMutations = mutationResults.filter(
+      (m) => m.status === "timeout",
+    ).length;
 
-    const mutationScore = totalMutations > 0 ? Math.round((killedMutations / totalMutations) * 100) : 0;
-    const scoreClass = mutationScore >= 80 ? 'mutation-score-good' :
-                      mutationScore >= 60 ? 'mutation-score-fair' : 'mutation-score-poor';
+    const effectiveMutations = killedMutations + survivedMutations;
+    const mutationScore =
+      effectiveMutations > 0
+        ? Math.round((killedMutations / effectiveMutations) * 100)
+        : 0;
+    const scoreClass =
+      mutationScore >= 80
+        ? "mutation-score-good"
+        : mutationScore >= 60
+          ? "mutation-score-fair"
+          : "mutation-score-poor";
 
     let html = `
                 <div class="mutation-results">
@@ -3225,10 +3672,10 @@ class TestCoverageReporter {
 
     // Group mutations by status
     const mutationsByStatus = {
-      survived: mutationResults.filter(m => m.status === 'survived'),
-      killed: mutationResults.filter(m => m.status === 'killed'),
-      error: mutationResults.filter(m => m.status === 'error'),
-      timeout: mutationResults.filter(m => m.status === 'timeout')
+      survived: mutationResults.filter((m) => m.status === "survived"),
+      killed: mutationResults.filter((m) => m.status === "killed"),
+      error: mutationResults.filter((m) => m.status === "error"),
+      timeout: mutationResults.filter((m) => m.status === "timeout"),
     };
 
     // Show survived mutations first (most important)
@@ -3236,7 +3683,7 @@ class TestCoverageReporter {
       html += `
                         <div class="mutation-group survived">
                             <h5>🔴 Survived Mutations (${mutationsByStatus.survived.length})</h5>`;
-      mutationsByStatus.survived.forEach(mutation => {
+      mutationsByStatus.survived.forEach((mutation) => {
         html += `
                             <div class="mutation-item survived">
                                 <span class="mutation-type">${mutation.mutationType}</span>
@@ -3252,7 +3699,7 @@ class TestCoverageReporter {
       html += `
                         <details class="mutation-group killed">
                             <summary>✅ Killed Mutations (${mutationsByStatus.killed.length})</summary>`;
-      mutationsByStatus.killed.forEach(mutation => {
+      mutationsByStatus.killed.forEach((mutation) => {
         html += `
                             <div class="mutation-item killed">
                                 <span class="mutation-type">${mutation.mutationType}</span>
@@ -3268,11 +3715,11 @@ class TestCoverageReporter {
       html += `
                         <details class="mutation-group error">
                             <summary>❌ Error Mutations (${mutationsByStatus.error.length})</summary>`;
-      mutationsByStatus.error.forEach(mutation => {
+      mutationsByStatus.error.forEach((mutation) => {
         html += `
                             <div class="mutation-item error">
                                 <span class="mutation-type">${mutation.mutationType}</span>
-                                <span class="mutation-error">${mutation.error || 'Unknown error'}</span>
+                                <span class="mutation-error">${mutation.error || "Unknown error"}</span>
                             </div>`;
       });
       html += `</details>`;
@@ -3290,17 +3737,19 @@ class TestCoverageReporter {
    */
   getMutationDescription(mutation) {
     const descriptions = {
-      'arithmetic': 'Changed arithmetic operator (+, -, *, /, %)',
-      'comparison': 'Changed comparison operator (==, !=, <, >, <=, >=)',
-      'logical': 'Changed logical operator (&&, ||, !)',
-      'conditional': 'Negated conditional statement',
-      'literals': 'Changed literal value (number, boolean, string)',
-      'returns': 'Changed return value to null',
-      'increments': 'Changed increment/decrement operator (++, --)',
-      'assignment': 'Changed assignment operator (+=, -=, *=, /=)'
+      arithmetic: "Changed arithmetic operator (+, -, *, /, %)",
+      comparison: "Changed comparison operator (==, !=, <, >, <=, >=)",
+      logical: "Changed logical operator (&&, ||, !)",
+      conditional: "Negated conditional statement",
+      literals: "Changed literal value (number, boolean, string)",
+      returns: "Changed return value to null",
+      increments: "Changed increment/decrement operator (++, --)",
+      assignment: "Changed assignment operator (+=, -=, *=, /=)",
     };
 
-    return descriptions[mutation.mutationType] || `${mutation.mutationType} mutation`;
+    return (
+      descriptions[mutation.mutationType] || `${mutation.mutationType} mutation`
+    );
   }
 }
 

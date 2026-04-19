@@ -105,7 +105,7 @@ else
 fi
 
 # Compare scores
-if [ "$WORKERS_SCORE" = "$DOCKER_SCORE" ]; then
+if [ "$WORKERS_SCORE" -eq "$DOCKER_SCORE" ]; then
     echo "✅ PASS: Mutation scores match exactly ($WORKERS_SCORE%)"
 elif [ "$DOCKER_SCORE" -eq 100 ] && [ "$WORKERS_SURVIVED" -gt 0 ]; then
     echo "❌ FAIL: Docker showing 100% (false positives)"
