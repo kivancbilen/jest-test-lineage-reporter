@@ -7,6 +7,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.4.1] - 2026-09-11
+
+### Fixed
+- **`JEST_LINEAGE_RUN_GAP=0` did not start clean.** `prepareRun` treated a shard
+  as part of the current run when `age <= gapMs`, and computed age as
+  `Date.now() - mtimeMs` with no floor. The filesystem records mtime with
+  sub-millisecond precision while `Date.now()` truncates to whole milliseconds,
+  so a shard written moments earlier reads as very slightly *in the future* and
+  its negative age satisfies any gap — including a gap of zero, which is
+  documented as start-clean-every-time. Records from a previous run could
+  therefore survive into the next report. Age is now clamped at zero and
+  compared with `<`.
+- **Report locations are platform-independent.** `test-redundancy.json` and
+  `test-redundancy.md` built their `path/to/file.spec.ts:42` locations with
+  `path.relative` and emitted them unchanged, so a report produced on Windows
+  said `src\a.ts:12`. Editors, CI annotations and agents read these back as
+  file:line references, so they are now always forward-slashed.
+- **The package's own suite runs on Windows**, and under
+  `JEST_LINEAGE_ENABLED=false`. npm scripts go through `cross-env` (inline
+  `VAR=value cmd` is not valid in PowerShell), and Jest no longer mistakes
+  `src/cli/commands/test.js` for a test suite.
+
 ### Added
 - **`JEST_LINEAGE_INCLUDE` / `JEST_LINEAGE_EXCLUDE`** path scoping for the Babel
   plugin. Instrumentation previously covered every non-test source file outside

@@ -11,7 +11,7 @@ find redundant tests, answer "what covers this line?", and score test quality.
 [![license](https://img.shields.io/npm/l/jest-test-lineage-reporter.svg)](./LICENSE)
 [![CI](https://github.com/kivancbilen/jest-test-lineage-reporter/actions/workflows/ci.yml/badge.svg)](https://github.com/kivancbilen/jest-test-lineage-reporter/actions/workflows/ci.yml)
 
-<!-- TODO: add a screenshot/GIF of the Redundancy tab here — docs/images/redundancy.png -->
+![The Redundancy tab: which tests reach almost the same lines, and which of them can go](https://raw.githubusercontent.com/kivancbilen/jest-test-lineage-reporter/main/docs/images/redundancy.png)
 
 ## Install
 
