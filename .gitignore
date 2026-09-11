@@ -167,3 +167,6 @@ lib/
 .test-results/
 test-redundancy.json
 test-redundancy.md
+
+# Lineage shards written beside the data file
+__w*-*.jsonl

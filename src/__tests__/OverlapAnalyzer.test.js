@@ -122,6 +122,56 @@ describe("OverlapAnalyzer", () => {
     expect(pair.largerTestId).toContain("broad");
   });
 
+  it("does not call a pair contained when they only share the common path", () => {
+    // The shape that made containment meaningless on a real suite: every test
+    // drives the library's main entry path, so a test that does nothing unusual
+    // is a strict subset of almost every other test. Containment saturates at
+    // 1.0 while telling you nothing — the two tests have no code in common that
+    // is specific to them.
+    const common = lines("core.ts", 1, 40);
+    const spec = { featureless: [...common] };
+    for (let i = 0; i < 12; i++) {
+      spec[`worker${i}`] = [...common, ...lines(`feature${i}.ts`, 1, 30)];
+    }
+
+    const result = new OverlapAnalyzer(coverageFrom(spec)).analyze();
+
+    const pair = result.pairs.find(
+      (p) =>
+        [p.aName, p.bName].includes("featureless") &&
+        [p.aName, p.bName].includes("worker0"),
+    );
+
+    // Every line "featureless" runs is also run by worker0 ...
+    expect(pair === undefined || pair.kind !== "subset").toBe(true);
+    // ... but none of the shared lines are specific to the two of them.
+    expect(
+      result.subsumptions.some((s) => s.contained.name === "featureless"),
+    ).toBe(false);
+  });
+
+  it("still reports containment when the shared code is specific to the pair", () => {
+    // Same suite shape, but now the narrow test shares lines that only it and
+    // one other test reach. That is real evidence, and must survive the guard.
+    const common = lines("core.ts", 1, 40);
+    const spec = { narrow: [...common, ...lines("feature0.ts", 1, 10)] };
+    for (let i = 0; i < 12; i++) {
+      spec[`worker${i}`] = [...common, ...lines(`feature${i}.ts`, 1, 30)];
+    }
+
+    const result = new OverlapAnalyzer(coverageFrom(spec)).analyze();
+
+    const pair = result.pairs.find(
+      (p) =>
+        [p.aName, p.bName].includes("narrow") &&
+        [p.aName, p.bName].includes("worker0"),
+    );
+
+    expect(pair).toBeDefined();
+    expect(pair.kind).toBe("subset");
+    expect(pair.rareSharedLines).toBeGreaterThanOrEqual(3);
+  });
+
   it("clusters equivalent tests and reports containment separately", () => {
     // mid and small are identical; big is a strict superset of both. The two
     // identical tests are one cluster; "big contains mid" is a directional

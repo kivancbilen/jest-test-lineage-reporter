@@ -170,7 +170,7 @@ class RedundancyReport {
     out.push(
       `${plural(report.summary.testsAnalysed, "test")} analysed · ` +
         `**${plural(report.summary.findings, "finding")}** · ` +
-        `${plural(report.summary.removableTests, "test")} could go · ` +
+        `${plural(report.summary.removableTests, "test")} to review · ` +
         `${(report.summary.removableDurationMs / 1000).toFixed(1)}s of runtime`,
     );
     out.push("");
@@ -281,7 +281,7 @@ class RedundancyReport {
       removableTests: cluster.size - 1,
       removableDurationMs: cluster.redundantDurationMs || 0,
       tests: cluster.members.map((m) => ({
-        role: m.isKeep ? "keep" : "remove",
+        role: m.isKeep ? "keep" : "review",
         name: m.name,
         location: this.#locate(m.testFile || cluster.testFile, m.name),
         lines: m.lines,
@@ -312,7 +312,7 @@ class RedundancyReport {
           lines: item.container.lines,
         },
         {
-          role: "remove",
+          role: "review",
           name: item.contained.name,
           location: this.#locate(item.contained.testFile, item.contained.name),
           lines: item.contained.lines,
