@@ -12,10 +12,12 @@ on:
 
 jobs:
   test:
-    name: Test on Node.js ${{ matrix.node-version }}
+    name: Test on Node.js ${{ matrix.node-version }} (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
 
     strategy:
+      # One platform failing should not cancel the others' results.
+      fail-fast: false
       matrix:
         os: [ubuntu-latest, windows-latest, macos-latest]
         node-version: [18, 20, 22]

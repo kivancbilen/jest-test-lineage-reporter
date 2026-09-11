@@ -235,11 +235,17 @@ function prepareRun(cwd = process.cwd()) {
       belongsToThisRun = shardRunId(file) === runId;
     } else {
       try {
-        age = now - fs.statSync(file).mtimeMs;
+        // Clamped at zero: the filesystem records mtime with sub-millisecond
+        // precision while Date.now() truncates to whole milliseconds, so a
+        // shard written moments ago can read as very slightly in the future.
+        // A negative age would satisfy any gap, including a gap of 0.
+        age = Math.max(0, now - fs.statSync(file).mtimeMs);
       } catch (e) {
         age = Infinity;
       }
-      belongsToThisRun = age <= gapMs;
+      // Strictly less-than: JEST_LINEAGE_RUN_GAP=0 means "start clean every
+      // time", and `<=` would keep a shard written in the same millisecond.
+      belongsToThisRun = age < gapMs;
     }
 
     if (belongsToThisRun) {

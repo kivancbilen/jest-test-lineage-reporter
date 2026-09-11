@@ -16,13 +16,23 @@ describe("babel plugin path scoping", () => {
   const saved = {
     include: process.env.JEST_LINEAGE_INCLUDE,
     exclude: process.env.JEST_LINEAGE_EXCLUDE,
+    enabled: process.env.JEST_LINEAGE_ENABLED,
   };
+
+  // These cases are about which paths the plugin instruments, so they must not
+  // inherit the ambient master switch — `npm run test:fast` sets it to "false",
+  // which makes the plugin instrument nothing at all.
+  beforeEach(() => {
+    process.env.JEST_LINEAGE_ENABLED = "true";
+  });
 
   afterEach(() => {
     delete process.env.JEST_LINEAGE_INCLUDE;
     delete process.env.JEST_LINEAGE_EXCLUDE;
+    delete process.env.JEST_LINEAGE_ENABLED;
     if (saved.include !== undefined) process.env.JEST_LINEAGE_INCLUDE = saved.include;
     if (saved.exclude !== undefined) process.env.JEST_LINEAGE_EXCLUDE = saved.exclude;
+    if (saved.enabled !== undefined) process.env.JEST_LINEAGE_ENABLED = saved.enabled;
   });
 
   it("instruments every source file when no filter is set", () => {
