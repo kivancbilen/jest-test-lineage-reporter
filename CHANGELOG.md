@@ -7,6 +7,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+- **Containment now requires evidence that the shared code is specific to the
+  pair.** `weightedContainment` saturates at 1.0 in any codebase where every
+  test drives the same core path: a test that does nothing unusual is a strict
+  subset of almost every other test. On react-hook-form's suite every one of the
+  324 containment pairs scored exactly 1.0, and one featureless test appeared in
+  28 separate findings. A pair is now only called contained when it also shares
+  at least `minRareSharedLines` (3) lines executed by no more than
+  `rarityCeiling` (10%) of the suite. The threshold never drops below two tests,
+  since a shared line always has at least two, and the guard is inactive below
+  `rarityGuardMinTests` (10) tests where rarity is not yet a meaningful notion.
+  That featureless test now appears in 1 finding, and total findings on that
+  suite fell from 337 to 220.
+- **Findings no longer tell you to delete anything.** The roles a finding
+  assigns are now `keep` and `review` rather than `keep` and `remove`, and the
+  suggested actions lead with comparing what each test asserts. Similarity is
+  computed over lines executed in the code under test and never sees the
+  assertions, so two tests can execute identical lines while checking different
+  outcomes, checking something coverage cannot represent (a re-render count), or
+  taking different branches that resolve within one line. The report says "these
+  drive the same code path", which is not the same claim.
+
 ## [2.4.1] - 2026-09-11
 
 ### Fixed

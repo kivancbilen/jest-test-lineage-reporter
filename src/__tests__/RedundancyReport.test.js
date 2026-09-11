@@ -131,7 +131,7 @@ describe("RedundancyReport", () => {
       expect(finding.action).toBeTruthy();
       expect(finding.tests.length).toBeGreaterThan(1);
       expect(finding.tests.filter((t) => t.role === "keep")).toHaveLength(1);
-      expect(finding.tests.some((t) => t.role === "remove")).toBe(true);
+      expect(finding.tests.some((t) => t.role === "review")).toBe(true);
       for (const test of finding.tests) expect(test.location).toBeTruthy();
     }
   });

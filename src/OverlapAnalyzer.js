@@ -34,6 +34,22 @@ const DEFAULTS = {
   subsetThreshold: 0.9,
   // Safety valve for very large suites: cap the number of reported pairs.
   maxPairs: 500,
+  // A containment verdict ("B adds nothing A does not already reach") is only
+  // meaningful when the two tests share code that is *specific* to them. In a
+  // library where every test drives the same core path, a test that does
+  // nothing unusual is a strict subset of almost every other test, and
+  // containment saturates at 1.0 without meaning anything. So a pair must share
+  // at least `minRareSharedLines` lines that no more than `rarityCeiling` of
+  // the suite executes before it can be called a subset. The resulting
+  // threshold never falls below two tests, since a shared line always has at
+  // least two.
+  rarityCeiling: 0.1,
+  minRareSharedLines: 3,
+  // "Rare" is a statistical claim, and a handful of tests has no distribution
+  // to make it about. Below this many tests the guard is inactive: small suites
+  // do not yet have the big shared core path that makes containment meaningless
+  // in the first place.
+  rarityGuardMinTests: 10,
   // Tests covering fewer than this many lines are too small to say anything
   // meaningful about (often a `expect(() => x).toThrow()` one-liner).
   minLinesPerTest: 3,
@@ -157,7 +173,23 @@ class OverlapAnalyzer {
     for (const [line, df] of documentFrequency) {
       weights.set(line, Math.log(total / df));
     }
+    this.lineTestCounts = documentFrequency;
+    this.rarityGuardActive = total >= this.options.rarityGuardMinTests;
+    // A shared line is covered by at least two tests by definition, so the
+    // threshold can never drop below 2 — otherwise no shared line is ever rare
+    // and small suites lose containment entirely.
+    this.rareLineMaxTests = Math.max(
+      2,
+      Math.ceil(this.options.rarityCeiling * total),
+    );
     return weights;
+  }
+
+  /** True when few enough tests execute this line for it to carry signal. */
+  #isRareLine(line) {
+    if (!this.rarityGuardActive) return true;
+    const df = this.lineTestCounts && this.lineTestCounts.get(line);
+    return df !== undefined && df <= this.rareLineMaxTests;
   }
 
   #weightOf(weights, line) {
@@ -221,7 +253,8 @@ class OverlapAnalyzer {
       if (
         pair &&
         (pair.weightedJaccard >= this.options.minWeightedSimilarity ||
-          pair.weightedContainment >= this.options.subsetThreshold)
+          (pair.weightedContainment >= this.options.subsetThreshold &&
+            pair.rareSharedLines >= this.options.minRareSharedLines))
       ) {
         pairs.push(pair);
       }
@@ -263,6 +296,11 @@ class OverlapAnalyzer {
       .filter((line) => this.#weightOf(weights, line) > 0)
       .sort((l, r) => this.#weightOf(weights, r) - this.#weightOf(weights, l));
 
+    // Shared lines that are rare across the suite. This is what separates "these
+    // two tests exercise the same specific behaviour" from "both tests, like
+    // every other test, went through the library's main entry path".
+    const rareShared = shared.filter((line) => this.#isRareLine(line));
+
     return {
       a: testA.id,
       b: testB.id,
@@ -280,19 +318,29 @@ class OverlapAnalyzer {
       weightedJaccard,
       weightedContainment,
       distinctiveSharedLines: distinctiveShared.length,
+      rareSharedLines: rareShared.length,
       topSharedLines: distinctiveShared.slice(0, 8),
       smallerTestId: small.id,
       largerTestId: large.id,
-      kind: this.#classify(weightedJaccard, weightedContainment),
+      kind: this.#classify(
+        weightedJaccard,
+        weightedContainment,
+        rareShared.length,
+      ),
       durationMs: (testA.duration || 0) + (testB.duration || 0),
     };
   }
 
-  #classify(weightedJaccard, weightedContainment) {
+  #classify(weightedJaccard, weightedContainment, rareSharedLines) {
     if (weightedJaccard >= this.options.duplicateThreshold) return "duplicate";
     if (weightedJaccard >= this.options.nearDuplicateThreshold)
       return "near-duplicate";
-    if (weightedContainment >= this.options.subsetThreshold) return "subset";
+    // Containment alone is not evidence: see `minRareSharedLines` in DEFAULTS.
+    if (
+      weightedContainment >= this.options.subsetThreshold &&
+      rareSharedLines >= this.options.minRareSharedLines
+    )
+      return "subset";
     return "overlapping";
   }
 
@@ -457,7 +505,7 @@ class OverlapAnalyzer {
   #suggestForSubsumption(contained, container, pair) {
     const pct = (pair.weightedContainment * 100).toFixed(0);
     return {
-      headline: `"${contained.name}" adds no coverage of its own`,
+      headline: `"${contained.name}" reaches no code the other misses`,
       detail:
         `${pct}% of what this test distinctively reaches is already reached by ` +
         `"${container.name}"` +
@@ -466,10 +514,10 @@ class OverlapAnalyzer {
             `those carry little weight — they are lines most of the suite runs anyway.`
           : `, and it touches nothing the other does not.`),
       action:
-        `If the two are meant to assert different things, the difference is not ` +
-        `reaching the source code — strengthen the assertions or drive a ` +
-        `different input. If it is genuinely covered, delete it and keep ` +
-        `"${container.name}".`,
+        `Check what each one asserts before acting. If they assert different ` +
+        `things, the difference is not reaching the source code — strengthen the ` +
+        `assertions or drive a different input. Only if they assert the same ` +
+        `thing is this a candidate to fold into "${container.name}".`,
     };
   }
 
@@ -488,9 +536,13 @@ class OverlapAnalyzer {
           `(${(avgWeighted * 100).toFixed(0)}% weighted similarity). They are ` +
           `probably the same scenario written more than once.`,
         action:
-          `Keep "${keep.name}" and fold ${names} into it — or if each is meant to ` +
-          `assert something different, the difference is not reaching the source ` +
-          `code, which means the extra assertions are not actually exercised.`,
+          `Compare what they assert. Executing the same lines is not the same as ` +
+          `testing the same thing — a test can assert a different outcome, or a ` +
+          `property line coverage cannot see at all, such as how many times ` +
+          `something re-rendered. If they do assert the same thing, keep ` +
+          `"${keep.name}" and fold ${names} into it. If they do not, the ` +
+          `difference never reaches the source code, which is worth knowing on ` +
+          `its own.`,
         savingHint: `~${seconds}s of runtime`,
       };
     }

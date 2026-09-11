@@ -74,6 +74,32 @@ Containment is reported per pair rather than clustered, because "A contains B"
 does not chain — one broad end-to-end test contains many narrow ones without
 those narrow tests being equivalent to each other.
 
+Containment also needs a second piece of evidence. In a library where every test
+drives the same core path, a test that does nothing unusual is a strict subset of
+almost every other test, and containment saturates at 1.0 without meaning
+anything. So a pair is only called contained when it also shares at least
+`minRareSharedLines` lines that no more than `rarityCeiling` of the suite
+executes — code specific to those two tests, not the path everybody takes.
+Measured on react-hook-form's suite, this took one such featureless test from 28
+findings to 1.
+
+### What this cannot tell you
+
+Similarity is computed over **lines executed in the code under test**. It never
+sees the test code or its assertions. Two tests can execute exactly the same
+lines and still be testing different things:
+
+- they assert different outcomes of the same call;
+- they assert a property coverage cannot represent at all, such as how many
+  times a component re-rendered;
+- they take different branches that resolve within a single line.
+
+So a finding says *"these drive the same code path"*, never *"delete one"*. That
+is why the roles are `keep` and `review` rather than `keep` and `remove`. Where
+two tests are genuinely meant to differ and the report still calls them
+identical, the difference is not reaching the source code — which is worth
+knowing on its own.
+
 ```js
 // jest.config.js
 module.exports = {
@@ -86,6 +112,8 @@ module.exports = {
           duplicateThreshold: 0.9,
           subsetThreshold: 0.9,
           minLinesPerTest: 3,
+          rarityCeiling: 0.1,
+          minRareSharedLines: 3,
         },
       },
     ],
