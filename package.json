@@ -1,6 +1,6 @@
 {
   "name": "jest-test-lineage-reporter",
-  "version": "2.3.0",
+  "version": "2.4.0",
   "main": "src/TestCoverageReporter.js",
   "bin": {
     "jest-lineage": "./bin/jest-lineage.js"
@@ -32,11 +32,15 @@
     "html-report",
     "mutation-testing",
     "mutation-analysis",
-    "test-effectiveness"
+    "test-effectiveness",
+    "jest-reporter",
+    "test-redundancy",
+    "duplicate-tests",
+    "test-analysis"
   ],
-  "author": "Jest Test Lineage Reporter Team",
+  "author": "Kivanc Bilen <kivanc_bilen@hotmail.com> (https://github.com/kivancbilen)",
   "license": "MIT",
-  "description": "Comprehensive test analytics platform with line-by-line coverage, performance metrics, memory analysis, and test quality scoring",
+  "description": "Find the tests you can delete. Per-test line coverage for Jest, weighted by line rarity, plus mutation testing and test quality scoring.",
   "repository": {
     "type": "git",
     "url": "https://github.com/kivancbilen/jest-test-lineage-reporter.git"
@@ -46,8 +50,7 @@
   },
   "homepage": "https://github.com/kivancbilen/jest-test-lineage-reporter#readme",
   "engines": {
-    "node": ">=14.0.0",
-    "npm": ">=6.0.0"
+    "node": ">=18.0.0"
   },
   "files": [
     "bin/",
