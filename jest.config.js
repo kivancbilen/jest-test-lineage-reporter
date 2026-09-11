@@ -44,4 +44,8 @@ module.exports = {
 
   // Test environment
   testEnvironment: 'node',
+
+  // Only files under src/__tests__ are test suites. Jest's default testMatch
+  // also picks up src/cli/commands/test.js, which is a CLI command, not a test.
+  testMatch: ['<rootDir>/src/__tests__/**/*.test.{ts,js}'],
 };
