@@ -12,23 +12,21 @@ on:
 
 jobs:
   test:
-    name: Test on Node.js ${{ matrix.node-version }}
+    name: Test on Node.js ${{ matrix.node-version }} (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
 
     strategy:
+      # One platform failing should not cancel the others' results.
+      fail-fast: false
       matrix:
         os: [ubuntu-latest, windows-latest, macos-latest]
-        node-version: [14, 16, 18, 20]
+        node-version: [18, 20, 22]
         exclude:
           # Run full matrix only on ubuntu, limited on others
           - os: windows-latest
-            node-version: 14
-          - os: windows-latest
-            node-version: 16
+            node-version: 18
           - os: macos-latest
-            node-version: 14
-          - os: macos-latest
-            node-version: 16
+            node-version: 18
 
     steps:
       - name: Checkout code

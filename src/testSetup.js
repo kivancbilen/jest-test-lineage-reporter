@@ -3,6 +3,7 @@
  */
 
 const logger = require("./logger");
+const lineageStore = require("./lineageStore");
 
 // Test Quality Analysis Functions
 function analyzeTestQuality(testFunction, testName) {
@@ -353,45 +354,17 @@ function createTestWrapper(originalFn, testType) {
 
         // Skip storing persistent data and writing files during mutation testing
         if (process.env.JEST_LINEAGE_MUTATION !== "true") {
-          // Also store in a more persistent way for the reporter
+          // Also store in a more persistent way for the reporter. Records from
+          // other workers are not loaded here: each process appends to its own
+          // shard and the reporter merges them once the run finishes.
           if (!global.__LINEAGE_PERSISTENT_DATA__) {
-            // Initialize array - load existing tests from file if merging is enabled
-            // This ensures data persists across test files running in separate workers
-            const shouldMerge = process.env.JEST_LINEAGE_MERGE !== "false";
-            if (shouldMerge) {
-              const fs = require("fs");
-              const path = require("path");
-              const filePath = path.join(
-                process.cwd(),
-                ".jest-lineage-data.json",
-              );
-
-              if (fs.existsSync(filePath)) {
-                try {
-                  const existingData = JSON.parse(
-                    fs.readFileSync(filePath, "utf8"),
-                  );
-                  // Convert coverage objects back to Maps
-                  global.__LINEAGE_PERSISTENT_DATA__ = existingData.tests.map(
-                    (test) => ({
-                      ...test,
-                      coverage: new Map(Object.entries(test.coverage || {})),
-                    }),
-                  );
-                } catch (e) {
-                  global.__LINEAGE_PERSISTENT_DATA__ = [];
-                }
-              } else {
-                global.__LINEAGE_PERSISTENT_DATA__ = [];
-              }
-            } else {
-              global.__LINEAGE_PERSISTENT_DATA__ = [];
-            }
+            global.__LINEAGE_PERSISTENT_DATA__ = [];
           }
           global.__LINEAGE_PERSISTENT_DATA__.push(testData);
 
-          // Write to file for reporter to read
-          writeTrackingDataToFile();
+          // Append-only write: constant cost per test, and no shared file for
+          // concurrent workers to overwrite.
+          lineageStore.appendTestRecord(testData);
         }
 
         return result;
@@ -852,107 +825,6 @@ function calculateCallDepth() {
   } catch (error) {
     // Fallback to depth 1 if stack trace analysis fails
     return 1;
-  }
-}
-
-// Method to write tracking data to file
-function writeTrackingDataToFile() {
-  // Skip writing during mutation testing to avoid creating reports
-  if (process.env.JEST_LINEAGE_MUTATION === "true") {
-    return;
-  }
-
-  const fs = require("fs");
-  const path = require("path");
-
-  try {
-    const filePath = path.join(process.cwd(), ".jest-lineage-data.json");
-
-    // Check if we should merge with existing data (default: true for multiple test files)
-    // Set JEST_LINEAGE_MERGE=false to disable merging and recreate from scratch
-    const shouldMerge = process.env.JEST_LINEAGE_MERGE !== "false";
-
-    let existingData = { timestamp: Date.now(), tests: [] };
-    if (shouldMerge && fs.existsSync(filePath)) {
-      try {
-        existingData = JSON.parse(fs.readFileSync(filePath, "utf8"));
-      } catch (e) {
-        // If file is corrupted, start fresh
-        existingData = { timestamp: Date.now(), tests: [] };
-      }
-    }
-
-    const tests = global.__LINEAGE_PERSISTENT_DATA__ || [];
-
-    // Don't write if we have no tests or if all tests have empty coverage
-    if (tests.length === 0) {
-      return;
-    }
-
-    // Check if any test has actual coverage data
-    const hasAnyCoverage = tests.some(
-      (test) => test.coverage && test.coverage.size > 0,
-    );
-    if (!hasAnyCoverage) {
-      return;
-    }
-
-    // Convert Map objects to plain objects for JSON serialization
-    const serializedTests = tests.map((testData) => ({
-      name: testData.name,
-      type: testData.type,
-      testFile: testData.testFile,
-      duration: testData.duration,
-      coverage:
-        testData.coverage instanceof Map
-          ? Object.fromEntries(testData.coverage)
-          : testData.coverage,
-      qualityMetrics: testData.qualityMetrics || {
-        assertions: 0,
-        asyncOperations: 0,
-        mockUsage: 0,
-        errorHandling: 0,
-        edgeCases: 0,
-        complexity: 0,
-        maintainability: 50,
-        reliability: 50,
-        testSmells: [],
-        codePatterns: [],
-        isolationScore: 100,
-        testLength: 0,
-      },
-    }));
-
-    let dataToWrite;
-    if (shouldMerge) {
-      // Merge with existing data (replace tests with same name to get latest coverage data)
-      const existingTestsByName = new Map(
-        existingData.tests.map((t) => [t.name, t]),
-      );
-
-      // Add/replace tests with new data
-      serializedTests.forEach((newTest) => {
-        existingTestsByName.set(newTest.name, newTest);
-      });
-
-      dataToWrite = {
-        timestamp: Date.now(),
-        tests: Array.from(existingTestsByName.values()),
-      };
-    } else {
-      // Recreate from scratch (default behavior)
-      dataToWrite = {
-        timestamp: Date.now(),
-        tests: serializedTests,
-      };
-    }
-
-    fs.writeFileSync(filePath, JSON.stringify(dataToWrite, null, 2));
-  } catch (error) {
-    logger.warn(
-      "Warning: Could not write tracking data to file:",
-      error.message,
-    );
   }
 }
 

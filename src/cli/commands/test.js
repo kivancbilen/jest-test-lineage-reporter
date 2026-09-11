@@ -10,6 +10,7 @@ const { success, error, info } = require("../utils/output-formatter");
 const fs = require("fs");
 const path = require("path");
 const logger = require("../../logger");
+const lineageStore = require("../../lineageStore");
 
 async function testCommand(jestArgs, options) {
   try {
@@ -28,7 +29,12 @@ async function testCommand(jestArgs, options) {
 
     // Check if lineage data was generated
     const dataPath = path.join(process.cwd(), ".jest-lineage-data.json");
-    if (result.success && fs.existsSync(dataPath)) {
+    // This summary is best-effort: on a very large run the file is too big to
+    // parse in one piece, and that must not fail a run that otherwise succeeded.
+    const summarizable =
+      fs.existsSync(dataPath) &&
+      fs.statSync(dataPath).size <= lineageStore.MAX_SAFE_JSON_BYTES;
+    if (result.success && summarizable) {
       const data = JSON.parse(fs.readFileSync(dataPath, "utf8"));
       const testCount = data.tests ? data.tests.length : 0;
       const fileCount = data.tests
@@ -46,6 +52,9 @@ async function testCommand(jestArgs, options) {
       }
     } else if (!result.success) {
       error("Tests failed. Lineage data may be incomplete.");
+    } else if (fs.existsSync(dataPath) && !options.quiet) {
+      info(`Lineage data saved to: ${dataPath}`);
+      logger.info(`   - too large to summarize here\n`);
     }
 
     // Exit with Jest's exit code

@@ -9,6 +9,7 @@ const testCommand = require('./commands/test');
 const mutateCommand = require('./commands/mutate');
 const reportCommand = require('./commands/report');
 const queryCommand = require('./commands/query');
+const redundancyCommand = require('./commands/redundancy');
 const analyzeCommand = require('./commands/analyze');
 const pkg = require('../../package.json');
 
@@ -76,6 +77,19 @@ async function run(argv) {
     .option('--json', 'Output as JSON')
     .option('--format <type>', 'Output format (table, list, json)', 'table')
     .action(queryCommand);
+
+  // Redundancy command - find `it` blocks covering nearly the same lines
+  program
+    .command('redundancy')
+    .description('Find tests that exercise almost the same lines and suggest what to remove')
+    .option('--data <path>', 'Path to lineage data file', '.jest-lineage-data.json')
+    .option('--json', 'Print machine-readable findings to stdout (for agents/tooling)')
+    .option('--markdown', 'Print a readable summary to stdout')
+    .option('--out <dir>', 'Directory to write test-redundancy.json/.md into')
+    .option('--min-similarity <n>', 'Weighted similarity threshold, 0-1 (default 0.5)')
+    .option('--min-lines <n>', 'Ignore tests covering fewer than N lines (default 3)')
+    .option('--verbose', 'Show detailed error messages')
+    .action(redundancyCommand);
 
   // Analyze command - Full workflow
   program

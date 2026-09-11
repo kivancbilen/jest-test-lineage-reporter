@@ -58,6 +58,19 @@ function lineageTrackerPlugin({ types: t }, options = {}) {
       VariableDeclaration(path, state) {
         if (!state.shouldInstrument) return;
 
+        // A declaration in a for-init / for-in-left / for-of-left is NOT in
+        // statement position. insertBefore() there detaches the binding from
+        // the loop head, so `for (let i = 0; i < n; i++)` compiles to code that
+        // throws "i is not defined" at runtime. Skip those positions.
+        const parentPath = path.parentPath;
+        if (
+          parentPath.isForStatement({ init: path.node }) ||
+          parentPath.isForInStatement({ left: path.node }) ||
+          parentPath.isForOfStatement({ left: path.node })
+        ) {
+          return;
+        }
+
         const lineNumber = path.node.loc?.start.line;
         if (lineNumber && !state.instrumentedLines.has(lineNumber)) {
           instrumentLine(path, state, lineNumber, "variable-declaration");
@@ -122,10 +135,62 @@ function lineageTrackerPlugin({ types: t }, options = {}) {
 }
 
 /**
+ * Parse a comma-separated pattern list into matchers.
+ *
+ * Each entry is used as a regular expression when it compiles, and as a plain
+ * substring otherwise. Filenames are normalised to forward slashes first so the
+ * same patterns work on every platform.
+ */
+const patternCache = new Map();
+function parsePatterns(raw) {
+  if (patternCache.has(raw)) return patternCache.get(raw);
+
+  const patterns = raw
+    .split(",")
+    .map((entry) => entry.trim())
+    .filter(Boolean)
+    .map((entry) => {
+      try {
+        return new RegExp(entry);
+      } catch (e) {
+        return { test: (value) => value.includes(entry) };
+      }
+    });
+
+  patternCache.set(raw, patterns);
+  return patterns;
+}
+
+function matchesAny(filename, raw) {
+  const normalized = filename.replace(/\\/g, "/");
+  return parsePatterns(raw).some((pattern) => pattern.test(normalized));
+}
+
+/**
  * Determines if a file should be instrumented
  */
 function shouldInstrumentFile(filename) {
   if (!filename) return false;
+
+  // Opt-in path scoping. Without it every source file in the repo gets
+  // instrumented, so in a monorepo each test records lines executed across
+  // every package rather than just the code under test, and the per-test
+  // payload grows without bound.
+  //
+  //   JEST_LINEAGE_INCLUDE  only instrument files matching one of these
+  //   JEST_LINEAGE_EXCLUDE  never instrument files matching one of these
+  //
+  // Jest caches transform output and the cache key does not include this
+  // plugin's configuration, so run `jest --clearCache` after changing either.
+  const exclude = process.env.JEST_LINEAGE_EXCLUDE;
+  if (exclude && matchesAny(filename, exclude)) {
+    return false;
+  }
+
+  const include = process.env.JEST_LINEAGE_INCLUDE;
+  if (include && !matchesAny(filename, include)) {
+    return false;
+  }
 
   // Don't instrument test files
   if (

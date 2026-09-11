@@ -1,6 +1,6 @@
 {
   "name": "jest-test-lineage-reporter",
-  "version": "2.3.0",
+  "version": "2.4.0",
   "main": "src/TestCoverageReporter.js",
   "bin": {
     "jest-lineage": "./bin/jest-lineage.js"
@@ -9,12 +9,12 @@
     "test": "jest",
     "test:watch": "jest --watch",
     "test:coverage": "jest --coverage",
-    "test:lineage": "JEST_LINEAGE_ENABLED=true jest",
-    "test:fast": "JEST_LINEAGE_ENABLED=false jest",
-    "test:performance": "JEST_LINEAGE_PERFORMANCE=true JEST_LINEAGE_QUALITY=false jest",
-    "test:quality": "JEST_LINEAGE_QUALITY=true JEST_LINEAGE_PERFORMANCE=false jest",
-    "test:mutation": "JEST_LINEAGE_MUTATION=true npm run test:lineage",
-    "test:mutation-only": "JEST_LINEAGE_ENABLED=true JEST_LINEAGE_MUTATION=true JEST_LINEAGE_PERFORMANCE=false JEST_LINEAGE_QUALITY=false jest",
+    "test:lineage": "cross-env JEST_LINEAGE_ENABLED=true jest",
+    "test:fast": "cross-env JEST_LINEAGE_ENABLED=false jest",
+    "test:performance": "cross-env JEST_LINEAGE_PERFORMANCE=true JEST_LINEAGE_QUALITY=false jest",
+    "test:quality": "cross-env JEST_LINEAGE_QUALITY=true JEST_LINEAGE_PERFORMANCE=false jest",
+    "test:mutation": "cross-env JEST_LINEAGE_MUTATION=true npm run test:lineage",
+    "test:mutation-only": "cross-env JEST_LINEAGE_ENABLED=true JEST_LINEAGE_MUTATION=true JEST_LINEAGE_PERFORMANCE=false JEST_LINEAGE_QUALITY=false jest",
     "validate": "npm run test"
   },
   "keywords": [
@@ -32,11 +32,15 @@
     "html-report",
     "mutation-testing",
     "mutation-analysis",
-    "test-effectiveness"
+    "test-effectiveness",
+    "jest-reporter",
+    "test-redundancy",
+    "duplicate-tests",
+    "test-analysis"
   ],
-  "author": "Jest Test Lineage Reporter Team",
+  "author": "Kivanc Bilen <kivanc_bilen@hotmail.com> (https://github.com/kivancbilen)",
   "license": "MIT",
-  "description": "Comprehensive test analytics platform with line-by-line coverage, performance metrics, memory analysis, and test quality scoring",
+  "description": "Find the tests you can delete. Per-test line coverage for Jest, weighted by line rarity, plus mutation testing and test quality scoring.",
   "repository": {
     "type": "git",
     "url": "https://github.com/kivancbilen/jest-test-lineage-reporter.git"
@@ -46,8 +50,7 @@
   },
   "homepage": "https://github.com/kivancbilen/jest-test-lineage-reporter#readme",
   "engines": {
-    "node": ">=14.0.0",
-    "npm": ">=6.0.0"
+    "node": ">=18.0.0"
   },
   "files": [
     "bin/",
@@ -75,6 +78,7 @@
     "@types/istanbul-lib-coverage": "^2.0.6",
     "@types/jest": "^30.0.0",
     "babel-jest": "^30.0.5",
+    "cross-env": "^7.0.3",
     "jest": "^30.0.5",
     "ts-jest": "^29.4.0",
     "ts-node": "^10.9.2",

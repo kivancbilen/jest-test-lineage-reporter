@@ -22,6 +22,9 @@ const {
 const { loadFullConfig } = require("../cli/utils/config-loader");
 const MutationTester = require("../MutationTester");
 const TestCoverageReporter = require("../TestCoverageReporter");
+const OverlapAnalyzer = require("../OverlapAnalyzer");
+const RedundancyReport = require("../RedundancyReport");
+const { toCoverageData } = require("../cli/commands/redundancy");
 const logger = require("../logger");
 
 // Create MCP server
@@ -144,6 +147,41 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
             },
           },
           required: ["file"],
+        },
+      },
+      {
+        name: "find_test_duplication",
+        description:
+          "Find `it` blocks that exercise almost the same lines of source code, ranked by what " +
+          "can be removed. Returns compact JSON with a location (file:line) per test and one " +
+          "concrete action per finding. Similarity is weighted so that lines every test runs " +
+          "(shared setup) do not count. Use this instead of reading the HTML report, which is " +
+          "far too large. Note: it measures lines EXECUTED, not test code or assertions.",
+        inputSchema: {
+          type: "object",
+          properties: {
+            dataPath: {
+              type: "string",
+              description: "Path to lineage data file",
+              default: ".jest-lineage-data.json",
+            },
+            minSimilarity: {
+              type: "number",
+              description: "Weighted similarity threshold, 0-1",
+              default: 0.5,
+            },
+            minLines: {
+              type: "number",
+              description: "Ignore tests covering fewer than this many lines",
+              default: 3,
+            },
+            format: {
+              type: "string",
+              enum: ["json", "markdown"],
+              description: "Output shape",
+              default: "json",
+            },
+          },
         },
       },
       {
@@ -391,6 +429,39 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
             ],
           };
         }
+      }
+
+      case "find_test_duplication": {
+        const rawData = loadLineageData(
+          args.dataPath || ".jest-lineage-data.json",
+        );
+        const coverageData = toCoverageData(rawData);
+
+        const analyzerOptions = {};
+        if (args.minSimilarity !== undefined) {
+          analyzerOptions.minWeightedSimilarity = args.minSimilarity;
+        }
+        if (args.minLines !== undefined) {
+          analyzerOptions.minLinesPerTest = args.minLines;
+        }
+
+        const analysis = new OverlapAnalyzer(
+          coverageData,
+          analyzerOptions,
+        ).analyze();
+        const report = new RedundancyReport(analysis);
+
+        return {
+          content: [
+            {
+              type: "text",
+              text:
+                args.format === "markdown"
+                  ? report.toMarkdown()
+                  : JSON.stringify(report.toJSON(), null, 2),
+            },
+          ],
+        };
       }
 
       case "analyze_full": {

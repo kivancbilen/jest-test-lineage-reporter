@@ -2,7 +2,10 @@ const fs = require("fs");
 const path = require("path");
 const { loadConfig } = require("./config");
 const MutationTester = require("./MutationTester");
+const OverlapAnalyzer = require("./OverlapAnalyzer");
+const RedundancyReport = require("./RedundancyReport");
 const logger = require("./logger");
+const lineageStore = require("./lineageStore");
 
 class TestCoverageReporter {
   constructor(globalConfig, options) {
@@ -31,6 +34,32 @@ class TestCoverageReporter {
       enableDebugLogging: this.options.enableDebugLogging || false,
       ...this.options,
     };
+  }
+
+  /**
+   * True when this run records no lineage of its own.
+   *
+   * The mutation tester spawns child Jest runs with tracking switched off, and
+   * those runs load this reporter too. They must leave the parent run's shards
+   * and data file alone.
+   */
+  isTrackingDisabled() {
+    return (
+      process.env.JEST_LINEAGE_ENABLED === "false" ||
+      process.env.JEST_LINEAGE_TRACKING === "false" ||
+      process.env.JEST_LINEAGE_MUTATION === "true"
+    );
+  }
+
+  // Called once before any test file runs, in the parent process.
+  onRunStart() {
+    if (this.isTrackingDisabled()) return;
+
+    // Workers append their records to `.jest-lineage-shards/`. Drop the ones
+    // left over from an earlier run, but keep those belonging to this one — a
+    // harness that reruns a failed suite does so in a second Jest process, and
+    // this process must not throw away the first process's tests.
+    lineageStore.prepareRun();
   }
 
   // This method is called after a single test file (suite) has completed.
@@ -305,6 +334,10 @@ class TestCoverageReporter {
 
   // This method is called after all tests in the entire run have completed.
   async onRunComplete(_contexts, _results) {
+    // Fold every worker's shard into the canonical `.jest-lineage-data.json`
+    // that the CLI, MCP server and mutation tester all read.
+    this.mergeShardsIntoDataFile();
+
     // Try to get precise tracking data before generating reports
     this.tryGetPreciseTrackingData();
 
@@ -371,7 +404,53 @@ class TestCoverageReporter {
     }
   }
 
+  /**
+   * Merge the per-process JSONL shards written during the run into the single
+   * JSON document downstream tools expect.
+   */
+  mergeShardsIntoDataFile() {
+    if (this.isTrackingDisabled()) return false;
+    if (!lineageStore.hasShards()) return false;
+
+    try {
+      const result = lineageStore.writeMergedData();
+      if (!result) return false;
+
+      let summary = `💾 Merged ${result.written} test record(s) into .jest-lineage-data.json`;
+      if (result.duplicates > 0) {
+        summary += ` (${result.duplicates} re-run record(s) superseded)`;
+      }
+      logger.info(summary);
+      return true;
+    } catch (error) {
+      logger.warn(
+        `⚠️  jest-lineage: could not merge lineage shards — the report may be ` +
+          `incomplete: ${error.message}`,
+      );
+      return false;
+    }
+  }
+
   tryGetPreciseTrackingData() {
+    // Shards are the complete picture: they include every worker, whereas the
+    // globals below only ever hold whatever ran in this process.
+    if (!this.isTrackingDisabled() && lineageStore.hasShards()) {
+      logger.info(
+        "🎯 Found precise lineage tracking data from all workers! Replacing estimated data...",
+      );
+      const restore = this.coverageData;
+      this.coverageData = {};
+      // Streamed rather than collected first: the records for a large run are
+      // as big as the report being built from them.
+      this.processFileTrackingData((visit) =>
+        lineageStore.forEachMergedRecord(process.cwd(), visit),
+      );
+      if (Object.keys(this.coverageData).length > 0) {
+        return true;
+      }
+      this.coverageData = restore;
+    }
+
     // Try to get data from global persistent data first (most reliable)
     if (
       global.__LINEAGE_PERSISTENT_DATA__ &&
@@ -461,6 +540,16 @@ class TestCoverageReporter {
     try {
       const filePath = path.join(process.cwd(), ".jest-lineage-data.json");
       if (fs.existsSync(filePath)) {
+        const { size } = fs.statSync(filePath);
+        if (size > lineageStore.MAX_SAFE_JSON_BYTES) {
+          logger.warn(
+            `⚠️  jest-lineage: ${filePath} is ${(size / 1024 / 1024).toFixed(0)}MB, ` +
+              `too large to parse in one piece. The report will be incomplete. ` +
+              `Set JEST_LINEAGE_INCLUDE to instrument only the code under test.`,
+          );
+          return null;
+        }
+
         const data = JSON.parse(fs.readFileSync(filePath, "utf8"));
         logger.info(
           `📖 Read tracking data: ${data.tests.length} tests from file`,
@@ -472,25 +561,40 @@ class TestCoverageReporter {
       }
     } catch (error) {
       logger.warn(
-        "Warning: Could not read tracking data from file:",
-        error.message,
+        `⚠️  jest-lineage: could not read tracking data — the report will be ` +
+          `incomplete: ${error.message}`,
       );
     }
     return null;
   }
 
-  processFileTrackingData(testDataArray) {
-    if (!Array.isArray(testDataArray)) {
-      logger.warn("⚠️ processFileTrackingData: testDataArray is not an array");
+  /**
+   * Fold per-test tracking records into `this.coverageData`.
+   *
+   * Accepts either an array or a producer `fn(callback)`. The producer form
+   * lets large runs stream records off disk one at a time instead of holding
+   * every test's coverage in memory alongside the report being built.
+   */
+  processFileTrackingData(testDataSource) {
+    let each;
+    if (typeof testDataSource === "function") {
+      const produce = testDataSource;
+      let index = 0;
+      each = (visit) => produce((record) => visit(record, index++));
+    } else if (Array.isArray(testDataSource)) {
+      each = (visit) => testDataSource.forEach(visit);
+    } else {
+      logger.warn(
+        "⚠️ processFileTrackingData: expected an array or a producer function",
+      );
       return;
     }
 
-    logger.debug(`🔍 Processing ${testDataArray.length} test data entries`);
-
-    let processedFiles = 0;
+    let processedTests = 0;
     let processedLines = 0;
 
-    testDataArray.forEach((testData, index) => {
+    each((testData, index) => {
+      processedTests++;
       try {
         if (!testData || typeof testData !== "object") {
           logger.warn(
@@ -676,7 +780,8 @@ class TestCoverageReporter {
     });
 
     logger.info(
-      `✅ Processed tracking data for ${Object.keys(this.coverageData).length} files (${processedLines} lines processed)`,
+      `✅ Processed tracking data for ${processedTests} tests across ` +
+        `${Object.keys(this.coverageData).length} files (${processedLines} lines processed)`,
     );
 
     // Debug: Show what files were processed
@@ -877,6 +982,32 @@ class TestCoverageReporter {
     logger.info(
       "🌐 Open the file in your browser to view the visual coverage report",
     );
+
+    this.writeRedundancyArtifacts();
+  }
+
+  /**
+   * Small machine-readable companions to the HTML report. The HTML runs to tens
+   * of megabytes on a real suite, which no agent can read; these are the same
+   * redundancy findings in a form a model (or a PR comment) can consume.
+   */
+  writeRedundancyArtifacts() {
+    try {
+      const analysis = this.generateOverlapData();
+      const { jsonPath, markdownPath, findings } = new RedundancyReport(
+        analysis,
+      ).write(process.cwd());
+
+      logger.info(
+        `\u{1f9ee} Redundancy findings (${findings}): ${jsonPath}`,
+      );
+      logger.info(`\u{1f4dd} Readable summary: ${markdownPath}`);
+    } catch (error) {
+      logger.warn(
+        "\u26a0\ufe0f Could not write redundancy artifacts:",
+        error.message,
+      );
+    }
   }
 
   validateCoverageData() {
@@ -1961,6 +2092,323 @@ class TestCoverageReporter {
             color: #6c757d;
             font-style: italic;
         }
+
+        /* ============================================================
+           Refreshed shell — neutral palette, real type scale, dark mode.
+           Appended last so it wins over the older rules above without
+           having to rewrite the markup that depends on them.
+           ============================================================ */
+        :root {
+            --bg: #f6f7f9;
+            --surface: #ffffff;
+            --surface-2: #fbfbfc;
+            --border: #e3e6ea;
+            --border-strong: #cfd4da;
+            --text: #1c2024;
+            --text-muted: #656d76;
+            --accent: #2f6feb;
+            --accent-soft: #eaf0fe;
+            --good: #1a7f47;
+            --good-soft: #e7f5ed;
+            --warn: #9a6700;
+            --warn-soft: #fdf5e2;
+            --bad: #b7362b;
+            --bad-soft: #fdeceb;
+            --radius: 10px;
+            --mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
+        }
+        @media (prefers-color-scheme: dark) {
+            :root {
+                --bg: #0f1216;
+                --surface: #171b21;
+                --surface-2: #1c2128;
+                --border: #2a3038;
+                --border-strong: #3a424c;
+                --text: #e6e9ed;
+                --text-muted: #9aa4b0;
+                --accent: #6ea1ff;
+                --accent-soft: #1a2740;
+                --good: #55c98a;
+                --good-soft: #14301f;
+                --warn: #e0b341;
+                --warn-soft: #302610;
+                --bad: #f2776b;
+                --bad-soft: #351a18;
+            }
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto,
+                         "Helvetica Neue", Arial, sans-serif;
+            background: var(--bg);
+            color: var(--text);
+            line-height: 1.55;
+            -webkit-font-smoothing: antialiased;
+            max-width: 1400px;
+            margin: 0 auto;
+        }
+
+        .header {
+            background: var(--surface);
+            color: var(--text);
+            border: 1px solid var(--border);
+            border-radius: var(--radius);
+            box-shadow: none;
+            text-align: left;
+            padding: 22px 26px;
+        }
+        .header h1 { margin: 0 0 4px; font-size: 21px; letter-spacing: -0.01em; }
+        .header p { margin: 0; color: var(--text-muted); font-size: 14px; }
+        .header .file-path { color: var(--text-muted); font-size: 12px; margin-top: 8px; }
+
+        .navigation {
+            background: var(--surface);
+            border: 1px solid var(--border);
+            border-radius: var(--radius);
+            box-shadow: none;
+            padding: 12px 16px;
+            position: sticky;
+            top: 0;
+            z-index: 20;
+        }
+        .nav-btn, .action-btn {
+            border-radius: 7px;
+            font-size: 13px;
+            padding: 7px 13px;
+            border: 1px solid transparent;
+        }
+        .nav-btn { background: transparent; color: var(--text-muted); }
+        .nav-btn:hover { background: var(--accent-soft); color: var(--accent); }
+        .nav-btn.active { background: var(--accent-soft); color: var(--accent); border-color: var(--accent); }
+        .action-btn { background: transparent; color: var(--text-muted); border-color: var(--border-strong); }
+        .action-btn:hover { background: var(--surface-2); color: var(--text); }
+        .sort-controls select {
+            background: var(--surface);
+            color: var(--text);
+            border-color: var(--border-strong);
+            border-radius: 7px;
+        }
+
+        h2 { font-size: 18px; letter-spacing: -0.01em; }
+        .view-lede { color: var(--text-muted); font-size: 14px; margin: -6px 0 18px; }
+        .view-lede code {
+            font-family: var(--mono);
+            font-size: 12.5px;
+            background: var(--surface-2);
+            border: 1px solid var(--border);
+            border-radius: 4px;
+            padding: 1px 5px;
+        }
+
+        /* ------------------------------------------------ redundancy view */
+        .overlap-analysis {
+            background: var(--surface);
+            border: 1px solid var(--border);
+            border-radius: var(--radius);
+            padding: 22px 26px 30px;
+        }
+
+        .ovl-tiles {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+            gap: 12px;
+            margin: 18px 0;
+        }
+        .ovl-tile {
+            background: var(--surface-2);
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            padding: 14px 16px;
+        }
+        .ovl-tile-value { font-size: 24px; font-weight: 600; letter-spacing: -0.02em; }
+        .ovl-tile-label { font-size: 12px; color: var(--text-muted); margin-top: 2px; }
+        .ovl-tile.warn { background: var(--warn-soft); border-color: var(--warn); }
+        .ovl-tile.warn .ovl-tile-value { color: var(--warn); }
+        .ovl-tile.good { background: var(--good-soft); border-color: var(--good); }
+        .ovl-tile.good .ovl-tile-value { color: var(--good); }
+        .ovl-tile.muted .ovl-tile-value { color: var(--text-muted); }
+
+        .ovl-note {
+            font-size: 13px;
+            color: var(--text-muted);
+            background: var(--surface-2);
+            border-left: 3px solid var(--accent);
+            border-radius: 0 6px 6px 0;
+            padding: 10px 14px;
+            margin: 0 0 24px;
+        }
+
+        .ovl-h3 {
+            font-size: 14px;
+            text-transform: uppercase;
+            letter-spacing: 0.06em;
+            color: var(--text-muted);
+            margin: 28px 0 12px;
+            padding-bottom: 8px;
+            border-bottom: 1px solid var(--border);
+        }
+        .ovl-count {
+            font-size: 12px;
+            background: var(--surface-2);
+            border: 1px solid var(--border);
+            border-radius: 20px;
+            padding: 1px 8px;
+            margin-left: 6px;
+            letter-spacing: 0;
+        }
+
+        .ovl-chip {
+            display: inline-block;
+            font-size: 11px;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.04em;
+            border-radius: 20px;
+            padding: 2px 9px;
+            white-space: nowrap;
+        }
+        .ovl-chip.ovl-duplicate { background: var(--bad-soft); color: var(--bad); }
+        .ovl-chip.ovl-near-duplicate { background: var(--warn-soft); color: var(--warn); }
+        .ovl-chip.ovl-subset { background: var(--warn-soft); color: var(--warn); }
+        .ovl-chip.ovl-overlapping { background: var(--accent-soft); color: var(--accent); }
+
+        .ovl-card {
+            border: 1px solid var(--border);
+            border-left: 3px solid var(--border-strong);
+            border-radius: 8px;
+            background: var(--surface-2);
+            padding: 16px 18px;
+            margin-bottom: 14px;
+        }
+        .ovl-card-duplicate { border-left-color: var(--bad); }
+        .ovl-card-near-duplicate, .ovl-card-subset { border-left-color: var(--warn); }
+        .ovl-card-head {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            flex-wrap: wrap;
+        }
+        .ovl-card-head h4 { margin: 0; font-size: 15px; flex: 1; }
+        .ovl-card-metric {
+            font-family: var(--mono);
+            font-size: 12px;
+            color: var(--text-muted);
+        }
+        .ovl-detail { font-size: 13.5px; color: var(--text-muted); margin: 8px 0 12px; }
+
+        .ovl-members { list-style: none; padding: 0; margin: 0 0 14px; }
+        .ovl-members li {
+            display: flex;
+            align-items: baseline;
+            gap: 10px;
+            padding: 7px 0;
+            border-top: 1px solid var(--border);
+            font-size: 13.5px;
+        }
+        .ovl-member-tag {
+            font-size: 10.5px;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.04em;
+            border-radius: 4px;
+            padding: 2px 6px;
+            flex-shrink: 0;
+            min-width: 68px;
+            text-align: center;
+        }
+        .ovl-members li.keep .ovl-member-tag { background: var(--good-soft); color: var(--good); }
+        .ovl-members li.drop .ovl-member-tag { background: var(--bad-soft); color: var(--bad); }
+        .ovl-members li.drop .ovl-member-name { color: var(--text-muted); }
+        .ovl-member-name { flex: 1; }
+        .ovl-member-meta { font-family: var(--mono); font-size: 11.5px; color: var(--text-muted); }
+
+        .ovl-action {
+            background: var(--surface);
+            border: 1px solid var(--border);
+            border-radius: 6px;
+            padding: 12px 14px;
+        }
+        .ovl-action strong {
+            display: block;
+            font-size: 11px;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+            color: var(--text-muted);
+            margin-bottom: 4px;
+        }
+        .ovl-action p { margin: 0; font-size: 13.5px; }
+        .ovl-saving {
+            display: inline-block;
+            margin-top: 8px;
+            font-size: 12px;
+            color: var(--good);
+            background: var(--good-soft);
+            border-radius: 4px;
+            padding: 2px 8px;
+        }
+
+        .ovl-table-wrap { overflow-x: auto; border: 1px solid var(--border); border-radius: 8px; }
+        .ovl-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+        .ovl-table th {
+            background: var(--surface-2);
+            text-align: left;
+            font-size: 11px;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+            color: var(--text-muted);
+            font-weight: 600;
+            padding: 9px 12px;
+            border-bottom: 1px solid var(--border);
+            position: sticky;
+            top: 0;
+        }
+        .ovl-table td { padding: 10px 12px; border-bottom: 1px solid var(--border); vertical-align: top; }
+        .ovl-table tr:last-child td { border-bottom: none; }
+        .ovl-table tr:hover td { background: var(--surface-2); }
+        .ovl-table .num { text-align: right; font-family: var(--mono); font-size: 12px; white-space: nowrap; }
+        .ovl-table .muted, .ovl-table td.muted { color: var(--text-muted); }
+        .ovl-pair { min-width: 320px; }
+        .ovl-test-a { font-weight: 500; }
+        .ovl-test-b { color: var(--text-muted); margin-top: 2px; }
+        .ovl-test-a::before, .ovl-test-b::before {
+            font-family: var(--mono);
+            font-size: 11px;
+            color: var(--text-muted);
+            margin-right: 6px;
+        }
+        .ovl-test-a::before { content: 'A'; }
+        .ovl-test-b::before { content: 'B'; }
+        .ovl-cross { font-size: 11.5px; color: var(--warn); margin-top: 3px; }
+        .ovl-file { font-family: var(--mono); font-size: 11px; color: var(--text-muted); margin-top: 2px; }
+
+        .ovl-bar {
+            display: inline-block;
+            vertical-align: middle;
+            width: 54px;
+            height: 5px;
+            background: var(--border);
+            border-radius: 3px;
+            overflow: hidden;
+            margin-right: 7px;
+        }
+        .ovl-bar-fill { height: 100%; border-radius: 3px; background: var(--accent); }
+        .ovl-bar-fill.ovl-duplicate { background: var(--bad); }
+        .ovl-bar-fill.ovl-near-duplicate, .ovl-bar-fill.ovl-subset { background: var(--warn); }
+        .ovl-bar-fill.ovl-good { background: var(--good); }
+        .ovl-num { font-family: var(--mono); font-size: 12px; }
+
+        .empty-state {
+            background: var(--surface-2);
+            border: 1px dashed var(--border-strong);
+            border-radius: 8px;
+            padding: 26px;
+            text-align: center;
+            color: var(--text-muted);
+            font-size: 14px;
+        }
+        .empty-state.good { border-color: var(--good); background: var(--good-soft); color: var(--good); }
+        .empty-state p { margin: 6px 0 0; font-size: 13px; }
+
     </style>
     <script>
         function toggleCoverage(lineNumber, filePath) {
@@ -1986,6 +2434,7 @@ class TestCoverageReporter {
             <button id="view-performance" class="nav-btn" onclick="showView('performance')">🔥 Performance Analytics</button>
             <button id="view-quality" class="nav-btn" onclick="showView('quality')">🧪 Test Quality</button>
             <button id="view-mutations" class="nav-btn" onclick="showView('mutations')">🧬 Mutation Testing</button>
+            <button id="view-overlap" class="nav-btn" onclick="showView('overlap')">🔁 Redundancy</button>
             <button id="expand-all" class="action-btn" onclick="expandAll()">📖 Expand All</button>
             <button id="collapse-all" class="action-btn" onclick="collapseAll()">📕 Collapse All</button>
         </div>
@@ -2681,6 +3130,30 @@ class TestCoverageReporter {
     logger.info("\n" + "=".repeat(60));
   }
 
+  /**
+   * Redundancy analysis: which `it` blocks reach almost the same lines.
+   * See OverlapAnalyzer for why similarity is weighted by line rarity rather
+   * than computed raw.
+   */
+  generateOverlapData() {
+    try {
+      const analyzer = new OverlapAnalyzer(
+        this.coverageData,
+        this.options.overlap || {},
+      );
+      return analyzer.analyze();
+    } catch (error) {
+      logger.warn("\u26a0\ufe0f Overlap analysis failed:", error.message);
+      return {
+        tests: [],
+        pairs: [],
+        clusters: [],
+        summary: { testCount: 0, pairCount: 0, clusterCount: 0 },
+        error: error.message,
+      };
+    }
+  }
+
   generateLinesData() {
     const linesData = [];
 
@@ -2886,6 +3359,14 @@ class TestCoverageReporter {
             </div>
         </div>
 
+        <div id="overlap-view" style="display: none;">
+            <div class="overlap-analysis">
+                <h2>🔁 Test Redundancy</h2>
+                <p class="view-lede">Which <code>it</code> blocks reach almost the same lines &mdash; after discounting the setup code every test runs.</p>
+                <div id="overlap-dashboard"></div>
+            </div>
+        </div>
+
         <div class="stats">
             <h3>📊 Overall Statistics</h3>
             <div class="stat-item">
@@ -2910,6 +3391,7 @@ class TestCoverageReporter {
         <script>
             // Global data for lines analysis
             window.linesData = ${JSON.stringify(this.generateLinesData())};
+            window.overlapData = ${JSON.stringify(this.generateOverlapData())};
 
             function showView(viewName) {
                 document.querySelectorAll('.nav-btn').forEach(btn => btn.classList.remove('active'));
@@ -2920,6 +3402,7 @@ class TestCoverageReporter {
                 document.getElementById('performance-view').style.display = viewName === 'performance' ? 'block' : 'none';
                 document.getElementById('quality-view').style.display = viewName === 'quality' ? 'block' : 'none';
                 document.getElementById('mutations-view').style.display = viewName === 'mutations' ? 'block' : 'none';
+                document.getElementById('overlap-view').style.display = viewName === 'overlap' ? 'block' : 'none';
                 document.getElementById('sort-controls').style.display = viewName === 'lines' ? 'flex' : 'none';
 
                 if (viewName === 'lines') {
@@ -2930,6 +3413,8 @@ class TestCoverageReporter {
                     generateQualityDashboard();
                 } else if (viewName === 'mutations') {
                     generateMutationsDashboard();
+                } else if (viewName === 'overlap') {
+                    generateOverlapDashboard();
                 }
             }
 
@@ -3406,6 +3891,218 @@ class TestCoverageReporter {
                 \`;
 
                 document.getElementById('quality-dashboard').innerHTML = html;
+            }
+
+            // ---------------------------------------------------- redundancy
+            function ovlPct(x) { return (x * 100).toFixed(0) + '%'; }
+
+            function ovlEscape(text) {
+                return String(text == null ? '' : text)
+                    .replace(/&/g, '&amp;').replace(/</g, '&lt;')
+                    .replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+            }
+
+            function ovlShortFile(p) {
+                if (!p) return '';
+                var parts = String(p).split('/');
+                return parts.slice(-2).join('/');
+            }
+
+            function ovlBar(value, kind) {
+                return '<div class="ovl-bar" title="' + ovlPct(value) + '">' +
+                       '<div class="ovl-bar-fill ovl-' + kind + '" style="width:' +
+                       Math.max(2, Math.min(100, value * 100)).toFixed(1) + '%"></div></div>';
+            }
+
+            function generateOverlapDashboard() {
+                var host = document.getElementById('overlap-dashboard');
+                var data = window.overlapData;
+
+                if (!data || data.error) {
+                    host.innerHTML = '<div class="empty-state">Redundancy analysis unavailable' +
+                        (data && data.error ? ': ' + ovlEscape(data.error) : '.') + '</div>';
+                    return;
+                }
+
+                var s = data.summary || {};
+                if (!s.testCount || s.testCount < 2) {
+                    host.innerHTML = '<div class="empty-state"><strong>Not enough tests to compare.</strong>' +
+                        '<p>Redundancy analysis needs at least two tests with recorded line coverage.</p></div>';
+                    return;
+                }
+
+                var html = '';
+
+                // --- summary tiles
+                html += '<div class="ovl-tiles">';
+                html += ovlTile(s.testCount, 'tests analysed', '');
+                html += ovlTile(s.findingCount == null ? s.clusterCount : s.findingCount,
+                                'redundancy findings',
+                                (s.findingCount || s.clusterCount) ? 'warn' : 'good');
+                html += ovlTile(s.redundantTests, 'tests that could go',
+                                s.redundantTests ? 'warn' : 'good');
+                html += ovlTile((s.redundantDurationMs / 1000).toFixed(1) + 's',
+                                'runtime in those tests', s.redundantDurationMs > 1000 ? 'warn' : '');
+                html += ovlTile(ovlPct(1 - (s.distinctiveLineRatio == null ? 1 : s.distinctiveLineRatio)),
+                                'lines every test runs', 'muted');
+                html += '</div>';
+
+                html += '<p class="ovl-note">Similarity is <strong>weighted</strong>: a line that every ' +
+                        'test executes (shared setup) counts for nothing, a line only two tests reach ' +
+                        'counts for a lot. That is why two tests can be 95% identical by raw line count ' +
+                        'and still be judged genuinely different.</p>';
+
+                // --- clusters (equivalent tests)
+                var subsumptions = data.subsumptions || [];
+                if (!data.clusters.length && !subsumptions.length) {
+                    html += '<div class="empty-state good"><strong>No redundant tests found.</strong>' +
+                            '<p>Every test reaches a materially different set of lines.</p></div>';
+                }
+
+                if (data.clusters.length) {
+                    html += '<h3 class="ovl-h3">Tests that do the same thing ' +
+                            '<span class="ovl-count">' + data.clusters.length + '</span></h3>';
+                    data.clusters.forEach(function (c, i) {
+                        html += ovlClusterCard(c, i);
+                    });
+                }
+
+                // --- subsumptions (one test covered by another)
+                if (subsumptions.length) {
+                    html += '<h3 class="ovl-h3">Tests already covered by another ' +
+                            '<span class="ovl-count">' + subsumptions.length + '</span></h3>';
+                    subsumptions.forEach(function (item) {
+                        html += ovlSubsumptionCard(item);
+                    });
+                }
+
+                // --- all pairs
+                if (data.pairs.length) {
+                    html += '<h3 class="ovl-h3">All overlapping pairs <span class="ovl-count">' +
+                            data.pairs.length + '</span></h3>';
+                    html += '<div class="ovl-table-wrap"><table class="ovl-table">' +
+                            '<thead><tr>' +
+                            '<th>Verdict</th><th>Test pair</th>' +
+                            '<th class="num" title="Weighted Jaccard: how much of the two tests\u2019 combined distinctive coverage they share">Similar</th>' +
+                            '<th class="num" title="Weighted containment: how much of the SMALLER test\u2019s distinctive coverage the larger one already has">Contained</th>' +
+                            '<th class="num" title="Unweighted Jaccard over raw line counts, shared setup included">Raw</th>' +
+                            '<th class="num">Shared</th><th class="num">Only A</th><th class="num">Only B</th>' +
+                            '</tr></thead><tbody>';
+                    data.pairs.forEach(function (p) {
+                        html += '<tr>' +
+                            '<td><span class="ovl-chip ovl-' + p.kind + '">' + p.kind + '</span></td>' +
+                            '<td class="ovl-pair">' +
+                                '<div class="ovl-test-a">' + ovlEscape(p.aName) + '</div>' +
+                                '<div class="ovl-test-b">' + ovlEscape(p.bName) + '</div>' +
+                                (p.sameTestFile ? '' : '<div class="ovl-cross">across test files</div>') +
+                            '</td>' +
+                            '<td class="num' + (p.kind === 'subset' ? ' muted' : '') + '">' +
+                                ovlBar(p.weightedJaccard, p.kind) +
+                                '<span class="ovl-num">' + ovlPct(p.weightedJaccard) + '</span></td>' +
+                            '<td class="num' + (p.kind === 'subset' ? '' : ' muted') + '">' +
+                                (p.kind === 'subset' ? ovlBar(p.weightedContainment, p.kind) : '') +
+                                '<span class="ovl-num">' + ovlPct(p.weightedContainment) + '</span></td>' +
+                            '<td class="num muted">' + ovlPct(p.rawJaccard) + '</td>' +
+                            '<td class="num">' + p.sharedLines + '</td>' +
+                            '<td class="num">' + p.aOnlyLines + '</td>' +
+                            '<td class="num">' + p.bOnlyLines + '</td>' +
+                            '</tr>';
+                    });
+                    html += '</tbody></table></div>';
+                }
+
+                // --- per-test distinctiveness
+                html += '<h3 class="ovl-h3">What each test uniquely reaches</h3>';
+                html += '<div class="ovl-table-wrap"><table class="ovl-table">' +
+                        '<thead><tr><th>Test</th><th class="num">Lines</th>' +
+                        '<th class="num">Distinctive</th><th class="num">Source files</th>' +
+                        '<th class="num">Duration</th></tr></thead><tbody>';
+                data.tests.slice().sort(function (a, b) {
+                    return b.distinctiveLines - a.distinctiveLines;
+                }).forEach(function (t) {
+                    var ratio = t.lines ? t.distinctiveLines / t.lines : 0;
+                    html += '<tr>' +
+                        '<td><div class="ovl-test-a">' + ovlEscape(t.name) + '</div>' +
+                        '<div class="ovl-file">' + ovlEscape(ovlShortFile(t.testFile)) + '</div></td>' +
+                        '<td class="num">' + t.lines + '</td>' +
+                        '<td class="num">' + ovlBar(ratio, ratio > 0.5 ? 'good' : 'overlapping') +
+                            '<span class="ovl-num">' + t.distinctiveLines + '</span></td>' +
+                        '<td class="num">' + t.sourceFiles + '</td>' +
+                        '<td class="num muted">' + (t.duration ? (t.duration / 1000).toFixed(2) + 's' : '—') + '</td>' +
+                        '</tr>';
+                });
+                html += '</tbody></table></div>';
+
+                host.innerHTML = html;
+            }
+
+            function ovlTile(value, label, tone) {
+                return '<div class="ovl-tile ' + (tone || '') + '">' +
+                       '<div class="ovl-tile-value">' + value + '</div>' +
+                       '<div class="ovl-tile-label">' + label + '</div></div>';
+            }
+
+            function ovlSubsumptionCard(item) {
+                var sug = item.suggestion || {};
+                var html = '<div class="ovl-card ovl-card-subset">';
+                html += '<div class="ovl-card-head">' +
+                        '<span class="ovl-chip ovl-subset">covered</span>' +
+                        '<h4>' + ovlEscape(sug.headline || '') + '</h4>' +
+                        '<span class="ovl-card-metric" title="weighted containment">' +
+                        ovlPct(item.weightedContainment) + ' contained</span>' +
+                        '</div>';
+                html += '<p class="ovl-detail">' + ovlEscape(sug.detail || '') + '</p>';
+                html += '<ul class="ovl-members">' +
+                        '<li class="keep"><span class="ovl-member-tag">covers it</span>' +
+                        '<span class="ovl-member-name">' + ovlEscape(item.container.name) + '</span>' +
+                        '<span class="ovl-member-meta">' + item.container.lines + ' lines</span></li>' +
+                        '<li class="drop"><span class="ovl-member-tag">covered</span>' +
+                        '<span class="ovl-member-name">' + ovlEscape(item.contained.name) + '</span>' +
+                        '<span class="ovl-member-meta">' + item.contained.lines + ' lines · ' +
+                        item.contained.onlyLines + ' unique</span></li>' +
+                        '</ul>';
+                html += '<div class="ovl-action"><strong>Suggested fix</strong><p>' +
+                        ovlEscape(sug.action || '') + '</p></div>';
+                if (!item.sameTestFile) {
+                    html += '<p class="ovl-cross">These live in different test files.</p>';
+                }
+                html += '</div>';
+                return html;
+            }
+
+            function ovlClusterCard(c, index) {
+                var sug = c.suggestion || {};
+                var html = '<div class="ovl-card ovl-card-' + c.kind + '">';
+                html += '<div class="ovl-card-head">' +
+                        '<span class="ovl-chip ovl-' + c.kind + '">' + c.kind + '</span>' +
+                        '<h4>' + ovlEscape(sug.headline || '') + '</h4>' +
+                        '<span class="ovl-card-metric" title="weighted similarity">' +
+                        ovlPct(c.avgWeightedJaccard) + ' similar</span>' +
+                        '</div>';
+
+                html += '<p class="ovl-detail">' + ovlEscape(sug.detail || '') + '</p>';
+
+                html += '<ul class="ovl-members">';
+                c.members.forEach(function (m) {
+                    html += '<li class="' + (m.isKeep ? 'keep' : 'drop') + '">' +
+                            '<span class="ovl-member-tag">' + (m.isKeep ? 'keep' : 'redundant') + '</span>' +
+                            '<span class="ovl-member-name">' + ovlEscape(m.name) + '</span>' +
+                            '<span class="ovl-member-meta">' + m.lines + ' lines' +
+                            (m.duration ? ' · ' + (m.duration / 1000).toFixed(2) + 's' : '') + '</span>' +
+                            '</li>';
+                });
+                html += '</ul>';
+
+                html += '<div class="ovl-action"><strong>Suggested fix</strong><p>' +
+                        ovlEscape(sug.action || '') + '</p>';
+                if (sug.savingHint) {
+                    html += '<span class="ovl-saving">Frees ' + ovlEscape(sug.savingHint) + '</span>';
+                }
+                html += '</div>';
+
+                html += '</div>';
+                void index;
+                return html;
             }
 
             function generateMutationsDashboard() {
