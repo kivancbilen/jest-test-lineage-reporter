@@ -5,10 +5,9 @@ on:
     branches:
       - main
       - develop
+  # Every pull request, not only those targeting main: a PR stacked on another
+  # branch needs checks too, and gets none if this lists target branches.
   pull_request:
-    branches:
-      - main
-      - develop
 
 jobs:
   test:
