@@ -50,6 +50,12 @@ const DEFAULTS = {
   // do not yet have the big shared core path that makes containment meaningless
   // in the first place.
   rarityGuardMinTests: 10,
+  // Which containment observations to report. Checked against two real suites,
+  // containment across *different* spec files is overwhelmingly noise: a small
+  // test is a strict subset of any larger one that happens to run a superset of
+  // its lines, however unrelated the two are. Within one spec file the two tests
+  // are at least about the same unit. "any" restores the old behaviour.
+  containmentScope: "same-file",
   // Tests covering fewer than this many lines are too small to say anything
   // meaningful about (often a `expect(() => x).toThrow()` one-liner).
   minLinesPerTest: 3,
@@ -468,6 +474,9 @@ class OverlapAnalyzer {
 
     return pairs
       .filter((p) => p.kind === "subset")
+      .filter(
+        (p) => this.options.containmentScope !== "same-file" || p.sameTestFile,
+      )
       .filter((p) => {
         const ca = clusterOf.get(p.a);
         const cb = clusterOf.get(p.b);
@@ -621,9 +630,11 @@ class OverlapAnalyzer {
         }
       }
     }
-    for (const item of subsumptions) {
-      removable.add(item.contained.id);
-    }
+    // Containment is deliberately absent from `redundantTests` and
+    // `findingCount`. Checked by hand against two suites it is the weakest
+    // signal the analysis produces — "B runs no line A misses" is true of any
+    // small test against any larger one — so it is reported as a separate,
+    // lower-confidence observation rather than counted as a finding.
 
     return {
       testCount: tests.length,
@@ -631,7 +642,7 @@ class OverlapAnalyzer {
       clusterCount: clusters.length,
       duplicateClusters: clusters.filter((c) => c.kind === "duplicate").length,
       subsumptionCount: subsumptions.length,
-      findingCount: clusters.length + subsumptions.length,
+      findingCount: clusters.length,
       redundantTests: removable.size,
       redundantDurationMs: removableDurationMs,
       sharedSetupLines,

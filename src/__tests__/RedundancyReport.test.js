@@ -92,9 +92,12 @@ describe("RedundancyReport", () => {
     // The caveat that this measures executed lines, not assertions, must ship
     // with the data — it is the single easiest thing to misread.
     expect(json.metrics.importantCaveat).toMatch(/assertions/i);
+    // `findings` counts duplicate clusters only. Containment is reported
+    // separately as a lower-confidence observation and must not inflate this.
     expect(json.summary).toEqual({
       testsAnalysed: 4,
-      findings: 2,
+      findings: 1,
+      observations: 1,
       removableTests: 2,
       removableDurationMs: 700,
       linesEveryTestRuns: 12,
@@ -120,8 +123,9 @@ describe("RedundancyReport", () => {
     expect(json.findings.map((f) => f.verdict)).toEqual([
       "identical",
       "near-identical",
-      "contained",
     ]);
+    // Containment never joins the findings list, however it ranks.
+    expect(json.observations.map((f) => f.verdict)).toEqual(["contained"]);
   });
 
   it("gives every test a role and an action an agent can act on", () => {
@@ -348,7 +352,7 @@ describe("RedundancyReport", () => {
 
     expect(fs.existsSync(result.jsonPath)).toBe(true);
     expect(fs.existsSync(result.markdownPath)).toBe(true);
-    expect(result.findings).toBe(2);
+    expect(result.findings).toBe(1);
     expect(() =>
       JSON.parse(fs.readFileSync(result.jsonPath, "utf8")),
     ).not.toThrow();
