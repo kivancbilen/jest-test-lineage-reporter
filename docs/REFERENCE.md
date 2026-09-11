@@ -5,6 +5,74 @@ Public disclaimer: This package is vibe coded, please use at your own risk**
 
 A comprehensive test analytics platform that provides line-by-line test coverage, performance metrics, memory analysis, test quality scoring, and mutation testing.
 
+## Test redundancy (Redundancy tab)
+
+The report's **🔁 Redundancy** tab answers "which `it` blocks are testing almost
+the same lines?" and suggests what to do about each finding.
+
+Comparing coverage sets directly does not work on real suites: every test in a
+file runs the same `beforeEach`/setup helpers, so any two tests look ~90%
+identical no matter what they assert. So each line is weighted by how rare it is
+across the suite:
+
+```
+weight(line) = log(totalTests / testsCoveringLine)
+```
+
+A line every test runs weighs 0 and drops out; a line only two tests reach is
+what actually distinguishes them. Both numbers are shown, and the gap between
+them is informative — raw 95% / weighted 10% is the signature of two genuinely
+different tests sitting behind a big shared fixture.
+
+Findings come in two kinds:
+
+- **Tests that do the same thing** — groups of mutually near-identical tests.
+  Suggestion: fold them together, or use `it.each` if they differ only by input.
+- **Tests already covered by another** — directional: everything test B reaches
+  is already reached by test A. Suggestion: delete B, or strengthen it so the
+  difference actually reaches the source code.
+
+Containment is reported per pair rather than clustered, because "A contains B"
+does not chain — one broad end-to-end test contains many narrow ones without
+those narrow tests being equivalent to each other.
+
+Thresholds are configurable via the reporter's `overlap` option (see
+`DEFAULTS` in `src/OverlapAnalyzer.js`):
+
+```js
+['jest-test-lineage-reporter', {
+  overlap: { duplicateThreshold: 0.9, subsetThreshold: 0.9, minLinesPerTest: 3 }
+}]
+```
+
+### Machine-readable output (for agents and CI)
+
+The HTML report is for humans and gets very large (tens of MB on a real suite),
+so every run also writes two small artifacts next to it:
+
+```
+test-redundancy.json   self-describing findings, stable ordering, ~10-100KB
+test-redundancy.md     the same findings as prose, for a PR comment or an agent
+```
+
+Each finding carries a verdict (`identical` / `near-identical` / `contained`),
+the metrics behind it, and a `location` of `path/to/file.spec.ts:42` per test —
+the line of the `it` block itself, resolved by reading the spec — so a tool can
+open exactly the right place. The JSON embeds a `metrics` block explaining what
+each number means, including the caveat that similarity is measured over lines
+*executed*, never over test code or assertions.
+
+Get them without re-running the suite:
+
+```bash
+jest-lineage redundancy                 # human summary + writes both files
+jest-lineage redundancy --json          # findings to stdout, nothing else
+jest-lineage redundancy --markdown      # readable summary to stdout
+jest-lineage redundancy --min-similarity 0.7 --out ./reports
+```
+
+Via MCP, the server exposes `find_test_duplication` with the same options.
+
 ## Features
 
 - **Line-by-line coverage mapping**: See exactly which tests execute each line of your source code
@@ -852,6 +920,14 @@ export JEST_LINEAGE_PERFORMANCE=true       # Performance monitoring (default: tr
 export JEST_LINEAGE_QUALITY=true           # Quality analysis (default: true)
 export JEST_LINEAGE_MUTATION=true          # Mutation testing (default: false)
 
+# 🎯 PATH SCOPING (important in monorepos)
+export JEST_LINEAGE_INCLUDE='packages/inventory/'   # Only instrument these paths
+export JEST_LINEAGE_EXCLUDE='src/generated/'        # Never instrument these paths
+
+# 🔗 RUN GROUPING (for harnesses that rerun failed suites)
+export JEST_LINEAGE_RUN_ID=ci-1234                  # Same value for every Jest process in one run
+export JEST_LINEAGE_RUN_GAP=120                     # Fallback window in seconds (0 = always start clean)
+
 # 📁 OUTPUT SETTINGS
 export JEST_LINEAGE_OUTPUT_FILE=custom-report.html
 export JEST_LINEAGE_DEBUG=true
@@ -866,6 +942,64 @@ export JEST_LINEAGE_MUTATION_TIMEOUT=10000   # 10 seconds per mutation
 export JEST_LINEAGE_MUTATION_THRESHOLD=80    # 80% minimum score
 export JEST_LINEAGE_MAX_MUTATIONS=50         # Max mutations per file
 ```
+
+### **Scoping instrumentation to the code under test**
+
+By default every non-test source file outside `node_modules` is instrumented. In
+a single-package repo that is what you want. In a monorepo it means each test
+records the lines it executed across *every* package, so the per-test payload
+grows with the size of the repository rather than the size of the code under
+test — tens of megabytes per test is normal at that scale.
+
+`JEST_LINEAGE_INCLUDE` narrows instrumentation to the paths you actually care
+about, and `JEST_LINEAGE_EXCLUDE` carves paths back out. Both take a
+comma-separated list; each entry is used as a regular expression when it
+compiles and as a plain substring otherwise, matched against the file's path
+with forward slashes. `JEST_LINEAGE_EXCLUDE` wins over `JEST_LINEAGE_INCLUDE`.
+
+```bash
+# Only instrument one package
+export JEST_LINEAGE_INCLUDE='packages/inventory/'
+
+# Two packages, minus generated code
+export JEST_LINEAGE_INCLUDE='packages/inventory/,packages/sales/'
+export JEST_LINEAGE_EXCLUDE='/generated/,\.pb\.ts$'
+```
+
+> **Run `jest --clearCache` after changing either variable.** Jest caches
+> transform output and the cache key does not include this plugin's
+> configuration, so previously transformed files keep their old instrumentation.
+
+### **How lineage data is stored**
+
+During a run, each Jest process appends its test records to its own JSONL shard
+under `.jest-lineage-shards/`. Nothing reads the accumulated data back while
+tests are running, which keeps the cost of recording a test constant, keeps
+concurrent workers from overwriting each other, and avoids building a JSON
+document too large for `JSON.parse`. The reporter merges the shards into
+`.jest-lineage-data.json` once the run completes, so every consumer of that file
+— the CLI, the MCP server, the mutation tester — is unchanged.
+
+The shard directory can be deleted safely at any time. Add it to `.gitignore`.
+
+**Runs that span more than one Jest process.** A logical test run is not always
+one `jest` invocation: harnesses commonly rerun a failed suite in a second
+process and report the aggregate of both. So each process keeps the shards that
+belong to its own run and deletes only the leftovers:
+
+| | |
+|---|---|
+| `JEST_LINEAGE_RUN_ID` | Give every Jest process in one logical run the same value, and shards are grouped by it exactly. This is what a harness should set. |
+| `JEST_LINEAGE_RUN_GAP` | Used when no run id is set: shards written within this many seconds count as part of the run now starting. Default `120`. |
+
+With neither set, the default gap already covers the rerun case — the second
+process starts seconds after the first ends. Set `JEST_LINEAGE_RUN_GAP=0` to
+make every Jest process start from an empty directory instead.
+
+Whenever shards are carried forward, the reporter says so on stdout, so a report
+never quietly contains more — or fewer — tests than you ran. If the same test is
+recorded twice, the later attempt wins, which is what you want when a rerun
+turns a failure into a pass.
 
 ## 🎛️ **Enable/Disable Controls**
 
