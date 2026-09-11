@@ -8,6 +8,7 @@ const path = require("path");
 const { spawn } = require("child_process");
 const { createMutationPlugin } = require("./babel-plugin-mutation-tester");
 const logger = require("./logger");
+const lineageStore = require("./lineageStore");
 
 class MutationTester {
   constructor(config = {}) {
@@ -82,6 +83,8 @@ class MutationTester {
   async loadLineageData() {
     try {
       const lineageFile = path.join(process.cwd(), ".jest-lineage-data.json");
+      // Pick up any shards left behind by a run whose reporter did not finish.
+      lineageStore.mergeShardsIfNewer(lineageFile);
       if (fs.existsSync(lineageFile)) {
         const data = JSON.parse(fs.readFileSync(lineageFile, "utf8"));
         this.lineageData = this.processLineageData(data);

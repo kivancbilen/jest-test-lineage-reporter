@@ -6,6 +6,22 @@
 const fs = require('fs');
 const path = require('path');
 const chalk = require('chalk');
+const lineageStore = require('../../lineageStore');
+
+/**
+ * Fold any leftover run shards into the JSON document, surfacing failures with
+ * CLI-shaped guidance rather than a raw error.
+ */
+function mergeShardsIfNewer(resolvedPath) {
+  try {
+    return lineageStore.mergeShardsIfNewer(resolvedPath);
+  } catch (error) {
+    throw new Error(
+      `Failed to merge lineage shards from ${chalk.yellow(lineageStore.getShardDir())}\n\n` +
+      `Error: ${error.message}`
+    );
+  }
+}
 
 /**
  * Load lineage data from file
@@ -15,10 +31,22 @@ const chalk = require('chalk');
 function loadLineageData(dataPath = '.jest-lineage-data.json') {
   const resolvedPath = path.resolve(process.cwd(), dataPath);
 
+  mergeShardsIfNewer(resolvedPath);
+
   if (!fs.existsSync(resolvedPath)) {
     throw new Error(
       `Lineage data file not found: ${chalk.yellow(resolvedPath)}\n\n` +
       `${chalk.cyan('Hint:')} Run ${chalk.green('jest-lineage test')} first to generate lineage data.`
+    );
+  }
+
+  const { size } = fs.statSync(resolvedPath);
+  if (size > lineageStore.MAX_SAFE_JSON_BYTES) {
+    throw new Error(
+      `Lineage data file is too large to parse: ${chalk.yellow(resolvedPath)} ` +
+      `(${(size / 1024 / 1024).toFixed(0)}MB)\n\n` +
+      `${chalk.cyan('Hint:')} Set ${chalk.green('JEST_LINEAGE_INCLUDE')} to instrument only the code ` +
+      `under test, then re-run with ${chalk.green('jest --clearCache')}.`
     );
   }
 
@@ -108,11 +136,12 @@ function processLineageDataForMutation(rawData) {
  */
 function lineageDataExists(dataPath = '.jest-lineage-data.json') {
   const resolvedPath = path.resolve(process.cwd(), dataPath);
-  return fs.existsSync(resolvedPath);
+  return fs.existsSync(resolvedPath) || lineageStore.hasShards();
 }
 
 module.exports = {
   loadLineageData,
+  mergeShardsIfNewer,
   processLineageDataForMutation,
   lineageDataExists
 };
