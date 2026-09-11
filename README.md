@@ -9,6 +9,7 @@ find redundant tests, answer "what covers this line?", and score test quality.
 
 [![npm](https://img.shields.io/npm/v/jest-test-lineage-reporter.svg)](https://www.npmjs.com/package/jest-test-lineage-reporter)
 [![license](https://img.shields.io/npm/l/jest-test-lineage-reporter.svg)](./LICENSE)
+[![CI](https://github.com/kivancbilen/jest-test-lineage-reporter/actions/workflows/ci.yml/badge.svg)](https://github.com/kivancbilen/jest-test-lineage-reporter/actions/workflows/ci.yml)
 
 <!-- TODO: add a screenshot/GIF of the Redundancy tab here — docs/images/redundancy.png -->
 
