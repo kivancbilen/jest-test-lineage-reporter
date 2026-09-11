@@ -28,8 +28,10 @@ describe("babel plugin recorded paths", () => {
         configFile: false,
         plugins: [[lineageTrackerPlugin, pluginOptions]],
       });
-      const match = code.match(/__TRACK_LINE_EXECUTION__\("([^"]+)"/);
-      return match && match[1];
+      const match = code.match(/__TRACK_LINE_EXECUTION__\("((?:[^"\\]|\\.)*)"/);
+      // The match is a *source* string literal, so a Windows separator arrives
+      // here escaped. Decode it to get the path the running code will report.
+      return match && JSON.parse(`"${match[1]}"`);
     } finally {
       if (saved === undefined) delete process.env.JEST_LINEAGE_ENABLED;
       else process.env.JEST_LINEAGE_ENABLED = saved;
