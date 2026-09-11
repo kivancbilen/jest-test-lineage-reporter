@@ -7,6 +7,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **Vitest support** for lineage tracking and redundancy analysis, as three
+  pieces mirroring the Jest setup: `jest-test-lineage-reporter/vitest/plugin`
+  (a Vite plugin), `/vitest/setup` and `/vitest/reporter`. The Vite plugin runs
+  the *same* Babel plugin the Jest integration uses, so both runners agree on
+  what gets instrumented and `JEST_LINEAGE_ENABLED` / `INCLUDE` / `EXCLUDE` mean
+  the same thing on each. Everything downstream of collection — the overlap
+  analysis, the redundancy report, the HTML — is shared unchanged. Verified
+  against zod's suite (2,194 tests). Mutation testing, performance and memory
+  tracking stay Jest-only: they wrap the test function, which the Vitest
+  integration does not do.
+- `projectRoot` option on the Babel plugin, so a runner that knows its own root
+  can pin every recorded path to it.
+
+### Fixed
+- **Recorded paths were wrong in a monorepo.** The plugin relativised each file
+  against the nearest `package.json`, which differs per package, while the
+  reporter reads them from wherever it was started — so in zod every path came
+  back as `src/v4/...` when the reporter needed `packages/zod/src/v4/...`, and
+  the HTML report could not find the sources to render. Runners now pass their
+  project root; the Vitest plugin takes Vite's, and Jest's behaviour is
+  unchanged when no root is given.
+
 ### Changed
 - **Containment now requires evidence that the shared code is specific to the
   pair.** `weightedContainment` saturates at 1.0 in any codebase where every
