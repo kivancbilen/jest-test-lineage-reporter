@@ -2,6 +2,16 @@
   "name": "jest-test-lineage-reporter",
   "version": "2.4.1",
   "main": "src/TestCoverageReporter.js",
+  "exports": {
+    ".": "./src/TestCoverageReporter.js",
+    "./vitest": "./src/vitest/index.mjs",
+    "./vitest/plugin": "./src/vitest/plugin.mjs",
+    "./vitest/reporter": "./src/vitest/reporter.mjs",
+    "./vitest/setup": "./src/vitest/setup.mjs",
+    "./src/*": "./src/*",
+    "./babel.config.js": "./babel.config.js",
+    "./package.json": "./package.json"
+  },
   "bin": {
     "jest-lineage": "./bin/jest-lineage.js"
   },
@@ -36,7 +46,9 @@
     "jest-reporter",
     "test-redundancy",
     "duplicate-tests",
-    "test-analysis"
+    "test-analysis",
+    "vitest",
+    "vitest-reporter"
   ],
   "author": "Kivanc Bilen <kivanc_bilen@hotmail.com> (https://github.com/kivancbilen)",
   "license": "MIT",
@@ -55,6 +67,7 @@
   "files": [
     "bin/",
     "src/",
+    "examples/",
     "babel.config.js",
     "README.md",
     "LICENSE"
@@ -83,5 +96,21 @@
     "ts-jest": "^29.4.0",
     "ts-node": "^10.9.2",
     "typescript": "^5.8.3"
+  },
+  "peerDependencies": {
+    "jest": ">=29",
+    "vitest": ">=3",
+    "@babel/core": "^7.0.0"
+  },
+  "peerDependenciesMeta": {
+    "jest": {
+      "optional": true
+    },
+    "vitest": {
+      "optional": true
+    },
+    "@babel/core": {
+      "optional": true
+    }
   }
 }

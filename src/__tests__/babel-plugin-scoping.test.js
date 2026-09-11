@@ -12,6 +12,54 @@ function isInstrumented(filename, source = "function f() { return 1; }") {
   return code.includes("__TRACK_LINE_EXECUTION__");
 }
 
+describe("babel plugin recorded paths", () => {
+  const babel = require("@babel/core");
+  const lineageTrackerPlugin = require("../babel-plugin-lineage-tracker");
+  const path = require("path");
+
+  /** The `file:line` string the instrumented code will report at runtime. */
+  function recordedPath(filename, pluginOptions = {}) {
+    const saved = process.env.JEST_LINEAGE_ENABLED;
+    process.env.JEST_LINEAGE_ENABLED = "true";
+    try {
+      const { code } = babel.transformSync("function f() { return 1; }", {
+        filename,
+        babelrc: false,
+        configFile: false,
+        plugins: [[lineageTrackerPlugin, pluginOptions]],
+      });
+      const match = code.match(/__TRACK_LINE_EXECUTION__\("((?:[^"\\]|\\.)*)"/);
+      // The match is a *source* string literal, so a Windows separator arrives
+      // here escaped. Decode it to get the path the running code will report.
+      return match && JSON.parse(`"${match[1]}"`);
+    } finally {
+      if (saved === undefined) delete process.env.JEST_LINEAGE_ENABLED;
+      else process.env.JEST_LINEAGE_ENABLED = saved;
+    }
+  }
+
+  it("records paths relative to an explicit project root", () => {
+    // The monorepo case: without a root the plugin relativises against the
+    // nearest package.json, which differs per package, so a reporter running
+    // from the repo root cannot find the file again.
+    const root = path.resolve("/repo");
+    const file = path.join(root, "packages", "zod", "src", "v4", "parse.ts");
+
+    expect(recordedPath(file, { projectRoot: root })).toBe(
+      path.join("packages", "zod", "src", "v4", "parse.ts"),
+    );
+  });
+
+  it("leaves the default behaviour alone when no root is given", () => {
+    const file = path.join(path.resolve("/repo"), "src", "a.ts");
+    const recorded = recordedPath(file);
+
+    // Still a relative path, just resolved the old way.
+    expect(recorded).toBeTruthy();
+    expect(path.isAbsolute(recorded)).toBe(false);
+  });
+});
+
 describe("babel plugin path scoping", () => {
   const saved = {
     include: process.env.JEST_LINEAGE_INCLUDE,
