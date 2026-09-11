@@ -17,6 +17,12 @@ function lineageTrackerPlugin({ types: t }, options = {}) {
         enter(path, state) {
           // Initialize plugin state
           state.filename = state.file.opts.filename;
+          // An explicit root keeps every recorded path relative to the same
+          // place. Without one, findProjectRoot() picks the nearest
+          // package.json, which in a monorepo differs per package — so the
+          // reporter, running from the repo root, cannot find the sources
+          // again. Runners that know their own root should pass it.
+          state.lineageRoot = options.projectRoot || null;
           state.shouldInstrument =
             isEnabled && shouldInstrumentFile(state.filename);
           state.instrumentedLines = new Set();
@@ -225,7 +231,12 @@ function shouldInstrumentFile(filename) {
  * Instruments a line by adding tracking call before it
  */
 function instrumentLine(path, state, lineNumber, nodeType) {
-  const trackingCall = createTrackingCall(state.filename, lineNumber, nodeType);
+  const trackingCall = createTrackingCall(
+    state.filename,
+    lineNumber,
+    nodeType,
+    state.lineageRoot,
+  );
 
   try {
     // Insert tracking call before the current statement
@@ -241,14 +252,14 @@ function instrumentLine(path, state, lineNumber, nodeType) {
 /**
  * Creates a tracking function call with package.json-based path detection
  */
-function createTrackingCall(filename, lineNumber, nodeType) {
+function createTrackingCall(filename, lineNumber, nodeType, explicitRoot) {
   const { types: t } = require("@babel/core");
   const path = require("path");
 
-  // Use package.json as the project root reference
+  // Use package.json as the project root reference, unless the caller named one
   let relativeFilePath;
   if (filename) {
-    const projectRoot = findProjectRoot(filename);
+    const projectRoot = explicitRoot || findProjectRoot(filename);
 
     if (projectRoot && filename.startsWith(projectRoot)) {
       // Convert absolute path to relative path from package.json location

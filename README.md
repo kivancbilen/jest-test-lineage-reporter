@@ -45,6 +45,28 @@ module.exports = {
 
 Full setup, TypeScript and monorepo notes: [docs/SETUP.md](docs/SETUP.md).
 
+### Vitest
+
+```js
+// vitest.config.mjs
+import { defineConfig } from "vitest/config";
+import { lineageTracker } from "jest-test-lineage-reporter/vitest/plugin";
+import { LineageReporter } from "jest-test-lineage-reporter/vitest/reporter";
+
+export default defineConfig({
+  plugins: [lineageTracker()],
+  test: {
+    setupFiles: ["jest-test-lineage-reporter/vitest/setup"],
+    reporters: ["default", new LineageReporter()],
+  },
+});
+```
+
+Needs `@babel/core` alongside it — the instrumentation is a Babel plugin, and
+Vitest projects rarely have Babel installed. Lineage and redundancy analysis
+work the same on both runners; mutation testing, performance and memory
+tracking remain Jest-only. See [examples/vitest](examples/vitest).
+
 ## Finding redundant tests
 
 Comparing raw coverage sets does not work on a real suite. Every test in a file
