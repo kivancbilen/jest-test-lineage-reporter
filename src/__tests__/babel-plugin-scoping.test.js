@@ -56,10 +56,13 @@ describe("babel plugin path scoping", () => {
   });
 
   it("treats each pattern as a regular expression", () => {
-    process.env.JEST_LINEAGE_INCLUDE = "^/repo/packages/(inventory|sales)/src/";
+    // Anchored at the resolved root, because Babel makes the filename absolute
+    // and on Windows that gains a drive letter — "^/repo/" would never match.
+    const root = require("path").resolve("/repo").replace(/\\/g, "/");
+    process.env.JEST_LINEAGE_INCLUDE = `^${root}/packages/(inventory|sales)/src/`;
 
-    expect(isInstrumented("/repo/packages/inventory/src/b.ts")).toBe(true);
-    expect(isInstrumented("/repo/vendor/packages/inventory/src/b.ts")).toBe(false);
+    expect(isInstrumented(`${root}/packages/inventory/src/b.ts`)).toBe(true);
+    expect(isInstrumented(`${root}/vendor/packages/inventory/src/b.ts`)).toBe(false);
   });
 
   it("falls back to a substring match for patterns that are not valid regexes", () => {

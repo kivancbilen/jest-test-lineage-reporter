@@ -366,7 +366,13 @@ class RedundancyReport {
   #relative(filePath) {
     try {
       const rel = path.relative(this.cwd, filePath);
-      return rel && !rel.startsWith("..") ? rel : filePath;
+      // Forward slashes regardless of platform: these locations are read back
+      // by editors, CI annotations and agents as `path/to/file.spec.ts:42`, so
+      // a report produced on Windows must say the same thing as one produced
+      // on Linux.
+      return rel && !rel.startsWith("..")
+        ? rel.split(path.sep).join("/")
+        : filePath;
     } catch {
       return filePath;
     }
