@@ -7,23 +7,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-### Changed
-- **Containment is no longer counted as a finding.** Running the analysis
-  against a second real suite (zod, 2,194 tests) showed the rarity guard added
-  in 2.5.0 is not general: react-hook-form funnels every test through one core
-  path, so its common lines are executed by most of the suite and the guard
-  catches them, whereas zod's suite is partitioned across four API surfaces so
-  no line reaches 10% of it and the guard changed nothing — 470 findings before
-  and after, 447 of them containment. Hand-checking those showed the usual
-  shape: `z.minLength` "containing" `zod/mini has no validate method`. Two
-  changes follow. The headline count is now duplicate clusters only (23 on zod,
-  not 470), and containment moves to a separate `observations` list in the JSON
-  and its own clearly-labelled section in the Markdown. Containment is also
-  scoped to a single spec file by default (`containmentScope: "same-file"`;
-  `"any"` restores the old behaviour), since cross-file pairs were 357 of those
-  447 and overwhelmingly unrelated. Duplicate detection held up on both suites;
-  containment did not, and the report now says so.
+## [3.0.0] - 2026-09-12
 
+Adds Vitest support, and changes what the report is willing to claim. Both
+changes came from pointing the analysis at codebases nobody here wrote.
+
+### Breaking
+- **`test-redundancy.json` is now schema version 3.** `summary.findings` counts
+  duplicate clusters only, where version 2 counted duplicates and containment
+  together, so the same field now reports a materially smaller number — 23
+  rather than 470 on zod's suite. Containment moved to a new top-level
+  `observations` array with its own `summary.observations` count. Anything
+  reading `summary.findings`, or expecting containment inside `findings`, needs
+  updating; check `schemaVersion` before parsing.
+- **Roles are `keep` and `review`, not `keep` and `remove`.** Similarity is
+  computed over lines executed in the code under test and never sees the
+  assertions, so two tests can execute identical lines while asserting different
+  outcomes, asserting something coverage cannot represent such as a re-render
+  count, or taking different branches that resolve within one line — all three
+  occur in react-hook-form. The report says "these drive the same code path",
+  which is a weaker claim than it used to make.
 
 ### Added
 - **Vitest support** for lineage tracking and redundancy analysis, as three
@@ -38,6 +41,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   integration does not do.
 - `projectRoot` option on the Babel plugin, so a runner that knows its own root
   can pin every recorded path to it.
+- `containmentScope` option, `"same-file"` by default. `"any"` restores the
+  pre-3.0 behaviour of reporting containment across spec files.
+
+### Changed
+- **Containment is reported, but no longer counted as a finding.** It is the
+  weakest signal the analysis produces: "B reaches no line A misses" is true of
+  any small test against a larger one that happens to run a superset of its
+  lines. Two guards now apply and neither makes it strong. A pair must share at
+  least `minRareSharedLines` (3) lines executed by no more than `rarityCeiling`
+  (10%) of the suite — on react-hook-form this took one featureless test from 28
+  observations to 1, while on zod, whose 2,194 tests are partitioned across four
+  API surfaces so no line reaches 10% of the suite, the same guard changed
+  nothing at all. And containment is now scoped to one spec file, because across
+  files it was 357 of zod's 447 containment pairs and overwhelmingly unrelated
+  tests: `z.minLength` "containing" `zod/mini has no validate method`. Duplicate
+  detection held up on both suites under hand-checking; containment did not.
+- **Findings lead with comparing assertions** rather than with deleting a test.
 
 ### Fixed
 - **Recorded paths were wrong in a monorepo.** The plugin relativised each file
@@ -47,28 +67,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   the HTML report could not find the sources to render. Runners now pass their
   project root; the Vitest plugin takes Vite's, and Jest's behaviour is
   unchanged when no root is given.
-
-### Changed
-- **Containment now requires evidence that the shared code is specific to the
-  pair.** `weightedContainment` saturates at 1.0 in any codebase where every
-  test drives the same core path: a test that does nothing unusual is a strict
-  subset of almost every other test. On react-hook-form's suite every one of the
-  324 containment pairs scored exactly 1.0, and one featureless test appeared in
-  28 separate findings. A pair is now only called contained when it also shares
-  at least `minRareSharedLines` (3) lines executed by no more than
-  `rarityCeiling` (10%) of the suite. The threshold never drops below two tests,
-  since a shared line always has at least two, and the guard is inactive below
-  `rarityGuardMinTests` (10) tests where rarity is not yet a meaningful notion.
-  That featureless test now appears in 1 finding, and total findings on that
-  suite fell from 337 to 220.
-- **Findings no longer tell you to delete anything.** The roles a finding
-  assigns are now `keep` and `review` rather than `keep` and `remove`, and the
-  suggested actions lead with comparing what each test asserts. Similarity is
-  computed over lines executed in the code under test and never sees the
-  assertions, so two tests can execute identical lines while checking different
-  outcomes, checking something coverage cannot represent (a re-render count), or
-  taking different branches that resolve within one line. The report says "these
-  drive the same code path", which is not the same claim.
+- **The publish workflow ran Node 14 and 16** against Jest 30, which needs 18+,
+  so every release tag left a failed run behind. CI also now runs on every pull
+  request rather than only those targeting `main`.
 
 ## [2.4.1] - 2026-09-11
 

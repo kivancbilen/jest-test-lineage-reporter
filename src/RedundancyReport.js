@@ -15,7 +15,10 @@
 const fs = require("fs");
 const path = require("path");
 
-const SCHEMA_VERSION = 2;
+// 3: `findings` counts duplicate clusters only, and containment moved to a
+// separate `observations` list. A reader of version 2 would mistake the new
+// `findings` number for the old, larger one.
+const SCHEMA_VERSION = 3;
 
 /** Analyzer edge kinds -> the vocabulary used in findings. */
 const VERDICT_BY_KIND = {
