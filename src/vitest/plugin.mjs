@@ -24,13 +24,17 @@ export function lineageTracker(options = {}) {
 
   return {
     name: "jest-test-lineage-reporter",
+    // `pre`, so Babel sees the original TypeScript and records the line numbers
+    // a human (and the mutation tester, which edits the file on disk) would
+    // recognise. Running after Vite's transform instead would be cheaper —
+    // Babel would need no TypeScript preset — but esbuild strips interfaces and
+    // type declarations outright, collapsing zod's checks.ts from 1,207 lines to
+    // 518. Every line number recorded that way points at the wrong statement.
+    enforce: "pre",
 
     configResolved(config) {
       if (!projectRoot) projectRoot = config.root || process.cwd();
     },
-    // `post` so Vite has already stripped types: Babel then sees plain JS and
-    // needs no TypeScript preset of its own.
-    enforce: "post",
     apply: "serve",
 
     async transform(code, id) {
@@ -38,10 +42,19 @@ export function lineageTracker(options = {}) {
       if (!SOURCE.test(file)) return null;
       if (file.includes("/node_modules/")) return null;
 
+      const isTSX = /\.tsx$/.test(file);
       const result = await babel.transformAsync(code, {
         filename: file,
         babelrc: false,
         configFile: false,
+        // Parse types rather than choke on them. Only the syntax is stripped;
+        // module syntax is left alone for Vite to handle.
+        presets: [
+          [
+            require.resolve("@babel/preset-typescript"),
+            { isTSX, allExtensions: true, onlyRemoveTypeImports: true },
+          ],
+        ],
         // Keep the original line numbers meaningful in stack traces; the
         // reporter reports on line numbers, so these must stay honest.
         sourceMaps: true,

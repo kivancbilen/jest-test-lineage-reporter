@@ -21,6 +21,9 @@ export class LineageReporter {
 
   onInit(vitest) {
     this.cwd = vitest?.config?.root || process.cwd();
+    // Mutation runs spawn a fresh Vitest, which must load the same config this
+    // run used — otherwise it sees none of the project's setup.
+    this.configPath = vitest?.vite?.config?.configFile || undefined;
   }
 
   async onTestRunEnd(testModules) {
@@ -49,6 +52,19 @@ export class LineageReporter {
     );
     writer.coverageData = coverageData;
     await writer.generateHtmlReport();
+
+    // Mutation testing re-runs a subset of the suite per mutant, which needs to
+    // know it is driving Vitest rather than Jest. Everything else about it —
+    // finding mutants, choosing which tests to re-run from the lineage — is the
+    // same on both runners.
+    if (this.options.enableMutationTesting) {
+      writer.options = {
+        ...writer.options,
+        testRunner: "vitest",
+        runnerConfig: this.options.runnerConfig || this.configPath,
+      };
+      await writer.runMutationTestingIfEnabled();
+    }
   }
 }
 

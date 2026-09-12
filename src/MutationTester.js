@@ -6,6 +6,7 @@
 const fs = require("fs");
 const path = require("path");
 const { spawn } = require("child_process");
+const { detectRunner, buildRunCommand } = require("./testRunners");
 const { createMutationPlugin } = require("./babel-plugin-mutation-tester");
 const logger = require("./logger");
 const lineageStore = require("./lineageStore");
@@ -844,48 +845,35 @@ class MutationTester {
     return new Promise((resolve) => {
       const startTime = Date.now();
 
-      // Build Jest command to run only specific test files and optionally specific test names
-      const jestArgs = [
-        "--testPathPatterns=" + testFiles.join("|"),
-        "--no-coverage",
-        "--bail", // Stop on first failure
-        "--no-cache", // Avoid cache issues with mutated files
-        "--forceExit", // Ensure Jest exits cleanly
-        "--runInBand", // Run tests in the main thread to avoid IPC issues
-      ];
+      // In Docker mode, PROJECT_PATH env var points to the mounted project directory
+      const cwd = process.env.PROJECT_PATH || process.cwd();
+
+      const runner = detectRunner(cwd, this.config.testRunner);
+      const {
+        command: jestCommand,
+        args: jestArgs,
+      } = buildRunCommand(runner, cwd, {
+        testFiles,
+        testNames,
+        configPath: this.config.runnerConfig,
+      });
+      const jestCmdArgs = jestArgs;
 
       // In Docker mode, override setupFilesAfterEnv with absolute path to fix module resolution
-      if (process.env.PROJECT_PATH) {
+      if (runner === "jest" && process.env.PROJECT_PATH) {
         jestArgs.push(
           "--setupFilesAfterEnv=/jest-lineage-reporter/src/testSetup.js",
         );
       }
 
-      // If specific test names are provided, add testNamePattern to run only those tests
       if (testNames && testNames.length > 0) {
-        // Escape special regex characters in test names and join with OR operator
-        const escapedTestNames = testNames.map((name) =>
-          name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"),
-        );
-        const testNamePattern = `(${escapedTestNames.join("|")})`;
-        jestArgs.push(`--testNamePattern=${testNamePattern}`);
         logger.debug(`🎯 Running specific tests: ${testNames.join(", ")}`);
       } else {
         logger.debug(`📁 Running all tests in files: ${testFiles.join(", ")}`);
       }
 
-      // Determine the working directory for Jest
-      // In Docker mode, PROJECT_PATH env var points to the mounted project directory
-      const cwd = process.env.PROJECT_PATH || process.cwd();
-
-      // Resolve the jest binary from the project's node_modules to avoid shell: true
-      const jestBin = path.resolve(cwd, "node_modules", ".bin", "jest");
-      const jestCommand = fs.existsSync(jestBin) ? jestBin : "npx";
-      const jestCmdArgs =
-        jestCommand === jestBin ? jestArgs : ["jest", ...jestArgs];
-
       // Debug: Log the exact command being executed
-      logger.debug(`🔍 Spawning: ${jestCommand} ${jestCmdArgs.join(" ")}`);
+      logger.debug(`🔍 Spawning (${runner}): ${jestCommand} ${jestCmdArgs.join(" ")}`);
       logger.debug(`🔍 Working directory: ${cwd}`);
 
       const jest = spawn(jestCommand, jestCmdArgs, {
@@ -923,7 +911,7 @@ class MutationTester {
           success: code === 0,
           executionTime,
           output,
-          error: code !== 0 ? `Jest exited with code ${code}` : null,
+          error: code !== 0 ? `${runner} exited with code ${code}` : null,
           jestArgs,
         });
       });

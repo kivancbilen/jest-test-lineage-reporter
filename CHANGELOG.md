@@ -7,6 +7,38 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- **Line numbers recorded on Vitest pointed at the wrong statement.** The Vite
+  plugin instrumented after Vite's own transform, so Babel saw JavaScript and
+  needed no TypeScript preset — but esbuild does not merely strip type
+  annotations, it erases interfaces and type declarations outright. zod's
+  `core/checks.ts` collapses from 1,207 lines to 518, and a comparison at source
+  line 83 is recorded as line 31. Every source line number a Vitest run produced
+  was therefore wrong, and mutation testing was worse than wrong: it mutates the
+  file on disk by source line, looked up which tests covered that line, got the
+  tests for an unrelated statement, ran them, and reported the mutant as
+  survived. On zod this showed as a 9% mutation score. Instrumentation now runs
+  before Vite's transform, with `@babel/preset-typescript` so Babel can parse
+  the types itself. The same run now scores 66%, and the surviving mutants are
+  real: `core/checks.ts:301` decides whether an unsafe integer reports `too_big`
+  or `too_small`, and inverting it passes all 2,254 of zod's tests.
+  `@babel/preset-typescript` is a new optional peer dependency.
+
+### Added
+- **Mutation testing works on Vitest.** Finding mutants, applying them and
+  choosing which tests to re-run from the lineage were already runner-agnostic;
+  only the command was not. `src/testRunners.js` now holds the per-runner
+  spelling of "run these test names in these files" — Vitest takes file filters
+  positionally and needs `--no-file-parallelism` where Jest needs `--runInBand`,
+  since a mutation lives in a file on disk and parallel workers would race over
+  it. Set `enableMutationTesting` on the Vitest reporter; the runner is detected
+  from the project unless `testRunner` says otherwise.
+- **`test-mutations.json`** beside the HTML report, listing every mutant with
+  its line, mutator and status. A surviving mutant names a line whose behaviour
+  no test checks, which is the most actionable thing this tool produces, and it
+  was previously only visible inside a multi-megabyte HTML page.
+
+
 ## [3.0.0] - 2026-09-12
 
 Adds Vitest support, and changes what the report is willing to claim. Both
