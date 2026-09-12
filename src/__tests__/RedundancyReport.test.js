@@ -86,7 +86,7 @@ describe("RedundancyReport", () => {
   it("emits a self-describing payload so a reader need not guess the metrics", () => {
     const json = new RedundancyReport(analysis()).toJSON();
 
-    expect(json.schemaVersion).toBe(2);
+    expect(json.schemaVersion).toBe(3);
     expect(json.metrics.similarity).toMatch(/weighted/i);
     expect(json.metrics.containment).toMatch(/smaller test/i);
     // The caveat that this measures executed lines, not assertions, must ship
