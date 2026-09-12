@@ -202,6 +202,68 @@ describe("OverlapAnalyzer", () => {
     }
   });
 
+  it("does not report containment across different spec files by default", () => {
+    // Checked by hand against two real suites, cross-file containment is
+    // overwhelmingly unrelated tests: a small test is a strict subset of any
+    // larger one that happens to run a superset of its lines.
+    const common = lines("core.ts", 1, 40);
+    const spec = {};
+    for (let i = 0; i < 12; i++) {
+      spec[`worker${i}`] = [...common, ...lines(`feature${i}.ts`, 1, 30)];
+    }
+
+    const data = coverageFrom(spec, "a.spec.ts");
+    // `narrow` lives in a different spec file, but shares worker0's feature.
+    Object.assign(
+      data,
+      (() => {
+        const extra = coverageFrom(
+          { narrow: [...common, ...lines("feature0.ts", 1, 12)] },
+          "b.spec.ts",
+        );
+        for (const file of Object.keys(extra)) {
+          data[file] = data[file] || {};
+          for (const line of Object.keys(extra[file])) {
+            data[file][line] = (data[file][line] || []).concat(
+              extra[file][line],
+            );
+          }
+        }
+        return data;
+      })(),
+    );
+
+    const result = new OverlapAnalyzer(data).analyze();
+    expect(
+      result.subsumptions.some((s) => s.contained.name === "narrow"),
+    ).toBe(false);
+
+    const anyScope = new OverlapAnalyzer(data, {
+      containmentScope: "any",
+    }).analyze();
+    expect(
+      anyScope.subsumptions.some((s) => s.contained.name === "narrow"),
+    ).toBe(true);
+  });
+
+  it("keeps containment out of the headline finding count", () => {
+    const body = lines("f.ts", 1, 50);
+    const result = new OverlapAnalyzer(
+      coverageFrom({
+        big: [...body, ...lines("f.ts", 51, 60)],
+        mid: body,
+        small: body,
+        unrelated: lines("z.ts", 1, 60),
+      }),
+    ).analyze();
+
+    expect(result.subsumptions.length).toBeGreaterThan(0);
+    // One duplicate cluster (mid/small); the containment observations are
+    // reported but must not be counted as findings.
+    expect(result.summary.findingCount).toBe(result.summary.clusterCount);
+    expect(result.summary.subsumptionCount).toBeGreaterThan(0);
+  });
+
   it("does not chain containment into one bogus mega-cluster", () => {
     // One broad test contains three narrow ones that have nothing to do with
     // each other. Chaining subset edges would merge all four into a single

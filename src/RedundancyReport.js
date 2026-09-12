@@ -67,20 +67,23 @@ class RedundancyReport {
   toJSON() {
     const { summary = {}, clusters = [], subsumptions = [] } = this.analysis;
 
-    const findings = [
-      ...clusters.map((c, i) => this.#clusterFinding(c, i)),
-      ...subsumptions.map((s, i) => this.#subsumptionFinding(s, i)),
-    ];
-
-    // Most actionable first: identical before near-identical before contained,
-    // then by how much runtime removing it would free.
-    const rank = { identical: 0, "near-identical": 1, contained: 2 };
-    findings.sort(
-      (a, b) =>
-        rank[a.verdict] - rank[b.verdict] ||
-        b.removableDurationMs - a.removableDurationMs ||
-        a.id.localeCompare(b.id),
+    // Two tiers, deliberately separate. Duplicate clusters have held up under
+    // hand-checking on real suites; containment has not, so it is reported as a
+    // lower-confidence observation and is not counted as a finding.
+    const findings = clusters.map((c, i) => this.#clusterFinding(c, i));
+    const observations = subsumptions.map((s, i) =>
+      this.#subsumptionFinding(s, i),
     );
+
+    // Most actionable first: identical before near-identical, then by how much
+    // runtime folding them together would free.
+    const rank = { identical: 0, "near-identical": 1, contained: 2 };
+    const order = (a, b) =>
+      rank[a.verdict] - rank[b.verdict] ||
+      b.removableDurationMs - a.removableDurationMs ||
+      a.id.localeCompare(b.id);
+    findings.sort(order);
+    observations.sort(order);
 
     const { pairs = [], tests = [] } = this.analysis;
 
@@ -91,6 +94,7 @@ class RedundancyReport {
       summary: {
         testsAnalysed: summary.testCount || 0,
         findings: findings.length,
+        observations: observations.length,
         removableTests: summary.redundantTests || 0,
         removableDurationMs: summary.redundantDurationMs || 0,
         linesEveryTestRuns: summary.sharedSetupLines || 0,
@@ -98,6 +102,9 @@ class RedundancyReport {
       },
       // The actionable conclusions.
       findings,
+      // Weaker signal, same shape: "B reaches no code A misses". True of any
+      // small test against a larger one, so read these with the assertions open.
+      observations,
       // Everything the Redundancy tab's "All overlapping pairs" table shows, so
       // a reader can audit a verdict or apply its own threshold rather than
       // trusting the classification.
@@ -181,12 +188,19 @@ class RedundancyReport {
     );
     out.push("");
 
-    if (report.findings.length === 0) {
+    if (report.findings.length === 0 && report.observations.length === 0) {
       out.push(
         "No redundant tests found. Every test reaches a materially different set of lines.",
       );
       out.push("");
       return out.join("\n");
+    }
+
+    if (report.findings.length === 0) {
+      out.push(
+        "No duplicate tests found — no two tests reach the same lines as each other.",
+      );
+      out.push("");
     }
 
     for (const finding of report.findings) {
@@ -224,6 +238,42 @@ class RedundancyReport {
         );
       }
       out.push("");
+    }
+
+    if (report.observations.length) {
+      out.push(
+        `# Lower-confidence observations (${report.observations.length})`,
+      );
+      out.push("");
+      out.push(
+        "> These are **not** findings. Each says only that one test reaches no line the " +
+          "other misses, which is true of any small test against a larger one that happens " +
+          "to run a superset of its lines. Checked by hand against two real suites, most " +
+          "pairs like this turned out to be unrelated tests. Read them with both tests open, " +
+          "and treat a match as a question rather than an answer.",
+      );
+      out.push("");
+
+      for (const observation of report.observations) {
+        out.push(`## ${observation.id} — ${observation.headline}`);
+        out.push("");
+        if (observation.detail) {
+          out.push(observation.detail);
+          out.push("");
+        }
+        out.push("| role | test | location | lines |");
+        out.push("| --- | --- | --- | --- |");
+        for (const test of observation.tests) {
+          out.push(
+            `| ${test.role} | ${escapePipes(test.name)} | \`${test.location}\` | ${test.lines} |`,
+          );
+        }
+        out.push("");
+        if (observation.action) {
+          out.push(`**Action:** ${observation.action}`);
+          out.push("");
+        }
+      }
     }
 
     if (report.pairs.length) {

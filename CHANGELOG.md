@@ -7,6 +7,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+- **Containment is no longer counted as a finding.** Running the analysis
+  against a second real suite (zod, 2,194 tests) showed the rarity guard added
+  in 2.5.0 is not general: react-hook-form funnels every test through one core
+  path, so its common lines are executed by most of the suite and the guard
+  catches them, whereas zod's suite is partitioned across four API surfaces so
+  no line reaches 10% of it and the guard changed nothing — 470 findings before
+  and after, 447 of them containment. Hand-checking those showed the usual
+  shape: `z.minLength` "containing" `zod/mini has no validate method`. Two
+  changes follow. The headline count is now duplicate clusters only (23 on zod,
+  not 470), and containment moves to a separate `observations` list in the JSON
+  and its own clearly-labelled section in the Markdown. Containment is also
+  scoped to a single spec file by default (`containmentScope: "same-file"`;
+  `"any"` restores the old behaviour), since cross-file pairs were 357 of those
+  447 and overwhelmingly unrelated. Duplicate detection held up on both suites;
+  containment did not, and the report now says so.
+
+
 ### Added
 - **Vitest support** for lineage tracking and redundancy analysis, as three
   pieces mirroring the Jest setup: `jest-test-lineage-reporter/vitest/plugin`

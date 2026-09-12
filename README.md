@@ -96,14 +96,22 @@ Containment is reported per pair rather than clustered, because "A contains B"
 does not chain — one broad end-to-end test contains many narrow ones without
 those narrow tests being equivalent to each other.
 
-Containment also needs a second piece of evidence. In a library where every test
-drives the same core path, a test that does nothing unusual is a strict subset of
-almost every other test, and containment saturates at 1.0 without meaning
-anything. So a pair is only called contained when it also shares at least
-`minRareSharedLines` lines that no more than `rarityCeiling` of the suite
-executes — code specific to those two tests, not the path everybody takes.
-Measured on react-hook-form's suite, this took one such featureless test from 28
-findings to 1.
+Containment is reported separately, and **is not counted as a finding**. It is
+the weakest signal here: "B reaches no line A misses" is true of any small test
+against a larger one that happens to run a superset of its lines. Two guards
+apply, and neither makes it strong:
+
+- a pair must share at least `minRareSharedLines` lines that no more than
+  `rarityCeiling` of the suite executes — code specific to those two tests rather
+  than the path everybody takes. On react-hook-form this took one featureless
+  test from 28 observations to 1; on zod, whose suite is partitioned across four
+  API surfaces so no line reaches 10% of it, the same guard changed nothing;
+- containment is only reported within a single spec file (`containmentScope`),
+  because across files it was overwhelmingly unrelated tests.
+
+Hand-checked against both suites, duplicate clusters held up and containment did
+not. So the headline count is duplicates only, and containment ships as
+lower-confidence observations to read with both tests open.
 
 ### What this cannot tell you
 
@@ -136,6 +144,7 @@ module.exports = {
           minLinesPerTest: 3,
           rarityCeiling: 0.1,
           minRareSharedLines: 3,
+          containmentScope: "same-file", // or "any"
         },
       },
     ],
