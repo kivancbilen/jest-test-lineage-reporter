@@ -62,9 +62,10 @@ export default defineConfig({
 });
 ```
 
-Needs `@babel/core` alongside it — the instrumentation is a Babel plugin, and
-Vitest projects rarely have Babel installed. Lineage and redundancy analysis
-work the same on both runners; mutation testing, performance and memory
+Needs `@babel/core` and `@babel/preset-typescript` alongside it — the
+instrumentation is a Babel plugin, and it has to run *before* Vite's own
+transform so that recorded line numbers match your source. Lineage, redundancy
+analysis and mutation testing all work on both runners; performance and memory
 tracking remain Jest-only. See [examples/vitest](examples/vitest).
 
 ## Finding redundant tests

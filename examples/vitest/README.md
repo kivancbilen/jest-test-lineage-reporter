@@ -38,8 +38,14 @@ executed across every package.
 - **Shard files are not used.** Vitest carries each test's lineage back to the
   reporter on `task.meta`, so there is nothing to write to disk and nothing to
   merge. `JEST_LINEAGE_RUN_ID` and `JEST_LINEAGE_RUN_GAP` have no effect here.
-- **Mutation testing, performance and memory tracking are Jest-only.** They wrap
-  the test function, which the Vitest integration does not do. Lineage and
-  redundancy analysis are the same on both.
+- **Performance and memory tracking are Jest-only.** They wrap the test
+  function, which the Vitest integration does not do. Lineage, redundancy
+  analysis and mutation testing are the same on both.
+- **Mutation testing** is opt-in: pass `enableMutationTesting: true` to the
+  reporter. Each mutant re-runs only the tests whose lineage covers the mutated
+  line, and results are written to `test-mutations.json`. Note that mutations
+  are applied to your source file on disk and restored afterwards; an
+  interrupted run can leave one behind, so check `git status` before
+  committing.
 - **Babel runs after Vite's own transform**, which costs a second parse. Scope
   instrumentation with `JEST_LINEAGE_INCLUDE` on a large codebase.

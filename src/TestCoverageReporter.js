@@ -378,6 +378,7 @@ class TestCoverageReporter {
 
         // Store results for HTML report integration
         this.mutationResults = results;
+        this.writeMutationArtifact(results);
 
         // Regenerate HTML report with mutation data
         await this.generateHtmlReport();
@@ -984,6 +985,29 @@ class TestCoverageReporter {
     );
 
     this.writeRedundancyArtifacts();
+  }
+
+  /**
+   * A surviving mutant is the most actionable thing this tool produces — it
+   * names a line whose behaviour no test checks. The HTML buries them; this is
+   * the same data in a form CI or an agent can read.
+   */
+  writeMutationArtifact(results) {
+    try {
+      const outPath = path.join(process.cwd(), "test-mutations.json");
+      fs.writeFileSync(outPath, JSON.stringify(results, null, 2), "utf8");
+      const survived = results && results.survivedMutations;
+      logger.info(
+        `\u{1f9ec} Mutation results${
+          survived === undefined ? "" : ` (${survived} survived)`
+        }: ${outPath}`,
+      );
+    } catch (error) {
+      logger.warn(
+        "\u26a0\ufe0f Could not write mutation results:",
+        error.message,
+      );
+    }
   }
 
   /**

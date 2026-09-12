@@ -60,6 +60,63 @@ describe("babel plugin recorded paths", () => {
   });
 });
 
+describe("babel plugin line numbers", () => {
+  const babel = require("@babel/core");
+  const lineageTrackerPlugin = require("../babel-plugin-lineage-tracker");
+
+  /** Every line number the instrumented code will report at runtime. */
+  function recordedLines(source, filename = "/repo/src/a.ts") {
+    const saved = process.env.JEST_LINEAGE_ENABLED;
+    process.env.JEST_LINEAGE_ENABLED = "true";
+    try {
+      const { code } = babel.transformSync(source, {
+        filename,
+        babelrc: false,
+        configFile: false,
+        presets: [
+          [
+            require.resolve("@babel/preset-typescript"),
+            { allExtensions: true },
+          ],
+        ],
+        plugins: [[lineageTrackerPlugin, { projectRoot: "/repo" }]],
+      });
+      return [
+        ...code.matchAll(/__TRACK_LINE_EXECUTION__\("[^"]+",\s*(\d+)/g),
+      ].map((m) => Number(m[1]));
+    } finally {
+      if (saved === undefined) delete process.env.JEST_LINEAGE_ENABLED;
+      else process.env.JEST_LINEAGE_ENABLED = saved;
+    }
+  }
+
+  it("reports the line numbers of the original TypeScript", () => {
+    // The mutation tester edits the file on disk, so a line number recorded
+    // here has to mean the same line a human sees. Instrumenting after a
+    // TypeScript transform has stripped the types would not: erasing these
+    // interfaces moves `answer()` up by many lines.
+    const source = [
+      "interface Big {", // 1
+      "  a: string;",
+      "  b: number;",
+      "  c: boolean;",
+      "}", // 5
+      "type Alias = Big | null;", // 6
+      "export function answer(): number {", // 7
+      "  return 42;", // 8
+      "}", // 9
+    ].join("\n");
+
+    const lines = recordedLines(source);
+
+    expect(lines.length).toBeGreaterThan(0);
+    // Everything instrumented belongs to the function at lines 7-9; nothing
+    // may be attributed to the erased type declarations above it.
+    expect(Math.min(...lines)).toBeGreaterThanOrEqual(7);
+    expect(Math.max(...lines)).toBeLessThanOrEqual(9);
+  });
+});
+
 describe("babel plugin path scoping", () => {
   const saved = {
     include: process.env.JEST_LINEAGE_INCLUDE,
