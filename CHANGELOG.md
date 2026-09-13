@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [3.1.0] - 2026-09-12
+
+A bug-fix release that also finishes Vitest support. The fix matters more than
+the feature: 3.0.0 records the wrong line numbers on Vitest, and anyone using
+that combination should upgrade.
+
 ### Fixed
 - **Line numbers recorded on Vitest pointed at the wrong statement.** The Vite
   plugin instrumented after Vite's own transform, so Babel saw JavaScript and
